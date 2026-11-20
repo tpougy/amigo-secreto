@@ -1,0 +1,31 @@
+{
+  "grupos": [
+    {
+      "codigo": "DMK3V7",
+      "titulo": "Amigo livro (demo)",
+      "tema": "livro",
+      "organizador": "demo-ana@teste.amigo",
+      "participantes": [
+        {
+          "email": "demo-ana@teste.amigo",
+          "apelido": "Ana",
+          "respostas": {
+            "Gêneros que mais gosto": ["fantasia", "poesia"],
+            "Livros que li recentemente": ["Torto Arado", "Dom Casmurro"]
+          }
+        },
+        {
+          "email": "demo-bruno@teste.amigo",
+          "apelido": "Bruno",
+          "respostas": {
+            "Gêneros que mais gosto": ["suspense"],
+            "Observações para quem me tirar": "Prefiro livros de bolso."
+          }
+        },
+        { "email": "demo-carla@teste.amigo", "apelido": "Carla", "respostas": { "Gêneros que mais gosto": ["romance", "clássicos"] } },
+        { "email": "demo-davi@teste.amigo", "apelido": "Davi" },
+        { "email": "demo-elisa@teste.amigo", "apelido": "Elisa", "respostas": { "Gêneros que mais gosto": ["biografia"] } }
+      ]
+    }
+  ]
+}

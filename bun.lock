@@ -52,6 +52,17 @@
         "@types/bun": "1.4.5",
       },
     },
+    "ingestao": {
+      "name": "@amigo/ingestao",
+      "dependencies": {
+        "@amigo/dominio": "workspace:*",
+        "@instantdb/admin": "1.0.67",
+        "zod": "4.6.7",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.5",
+      },
+    },
     "painel": {
       "name": "@amigo/painel",
       "dependencies": {
@@ -86,6 +97,8 @@
     "@amigo/app": ["@amigo/app@workspace:app"],
 
     "@amigo/dominio": ["@amigo/dominio@workspace:dominio"],
+
+    "@amigo/ingestao": ["@amigo/ingestao@workspace:ingestao"],
 
     "@amigo/painel": ["@amigo/painel@workspace:painel"],
 
