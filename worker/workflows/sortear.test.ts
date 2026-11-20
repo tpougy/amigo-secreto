@@ -25,6 +25,8 @@ import {
   definirSorteio,
   dispararSorteio,
   gravarPares,
+  marcarErro,
+  MSG_PARTICIPANTES_MUDARAM,
   processarPendentes,
   streamDoSorteio,
   type AdminDb,
@@ -456,9 +458,9 @@ describe("workflow sortear", () => {
     const carga = (await carregar(admin, sorteioId)) as Carga;
     expect(carga.participantes).toHaveLength(4);
 
-    expect(await gravarPares(admin, SEGREDO_TESTE, sorteioId, carga)).toBe(4);
+    expect(await gravarPares(admin, SEGREDO_TESTE, sorteioId, carga)).toEqual({ pares: 4 });
     const primeira = (await paresDoGrupo(G.grupoId)).map((p) => `${p.id}|${p.doador!.id}|${p.receptor!.id}`).sort();
-    expect(await gravarPares(admin, SEGREDO_TESTE, sorteioId, carga)).toBe(4);
+    expect(await gravarPares(admin, SEGREDO_TESTE, sorteioId, carga)).toEqual({ pares: 4 });
     const segunda = (await paresDoGrupo(G.grupoId)).map((p) => `${p.id}|${p.doador!.id}|${p.receptor!.id}`).sort();
 
     expect(primeira).toHaveLength(4);
@@ -479,9 +481,70 @@ describe("workflow sortear", () => {
     };
     const antes = (await paresDoGrupo(G1.grupoId)).map((p) => `${p.id}|${p.doador!.id}|${p.receptor!.id}`).sort();
     expect(antes).toHaveLength(3);
-    expect(await gravarPares(admin, SEGREDO_TESTE, sorteio2, carga)).toBe(3);
+    expect(await gravarPares(admin, SEGREDO_TESTE, sorteio2, carga)).toEqual({ pares: 3 });
     const depois = (await paresDoGrupo(G1.grupoId)).map((p) => `${p.id}|${p.doador!.id}|${p.receptor!.id}`).sort();
     expect(depois).toEqual(antes);
     expect((await lerGrupo(G1.grupoId)).rodadaAtual).toBe(2);
+  });
+  test("9. participante entra durante o sorteio: gravar-pares marca erro, sem pares", async () => {
+    // A regra já barra a entrada pelo cliente; aqui o admin força a mudança entre os passos.
+    const G = await grupoCom(3);
+    const sorteioId = await pedirSorteio(G, 1);
+    const carga = (await carregar(admin, sorteioId)) as Carga;
+    expect(carga.participantes).toHaveLength(3);
+    const novo = await criarUsuario(PREFIXO);
+    const pNovo = id();
+    await admin.transact(
+      admin.tx.participantes[pNovo]!
+        .create({ apelido: "novo", perfilCompleto: false, removido: false, entrouEm: Date.now(), chave: `${G.grupoId}:${novo.id}` })
+        .link({ grupo: G.grupoId, usuario: novo.id }),
+    );
+    expect(await gravarPares(admin, SEGREDO_TESTE, sorteioId, carga)).toEqual({ erro: MSG_PARTICIPANTES_MUDARAM });
+    const s = await lerSorteio(sorteioId);
+    expect(s!.status).toBe("erro");
+    expect(s!.erro).toBe("Os participantes mudaram durante o sorteio. Tente de novo.");
+    expect(s!.chave).toBe(`${G.grupoId}:1:erro:${sorteioId}`);
+    expect(s!.pares).toHaveLength(0);
+    const g = await lerGrupo(G.grupoId);
+    expect(g.status).toBe("aberto");
+    expect(g.rodadaAtual).toBe(0);
+  });
+
+  test("9b. participante sai durante o sorteio: também vira erro", async () => {
+    const G = await grupoCom(4);
+    const sorteioId = await pedirSorteio(G, 1);
+    const carga = (await carregar(admin, sorteioId)) as Carga;
+    await admin.transact(admin.tx.participantes[G.participantes[3]!]!.delete());
+    expect(await gravarPares(admin, SEGREDO_TESTE, sorteioId, carga)).toEqual({ erro: MSG_PARTICIPANTES_MUDARAM });
+    expect(await paresDoGrupo(G.grupoId)).toHaveLength(0);
+  });
+
+  test("10. grupo apagado durante o sorteio: gravar-pares e marcarErro não criam fantasmas", async () => {
+    const G = await grupoCom(3);
+    const sorteioId = await pedirSorteio(G, 1);
+    const carga = (await carregar(admin, sorteioId)) as Carga;
+    await G.org.db.transact(G.org.db.tx.grupos[G.grupoId]!.delete());
+    expect(await gravarPares(admin, SEGREDO_TESTE, sorteioId, carga)).toEqual({ ignorar: true });
+    expect(await marcarErro(admin, sorteioId, G.grupoId, 1, "x", "teste")).toBe(false);
+    const r = await admin.query({
+      grupos: { $: { where: { id: G.grupoId } } },
+      sorteios: { $: { where: { id: sorteioId } } },
+      pares: { $: { where: { chave: { $in: G.participantes.map((p) => `${sorteioId}:${p}`) } } } },
+    });
+    expect(r.grupos).toEqual([]);
+    expect(r.sorteios).toEqual([]);
+    expect(r.pares).toEqual([]);
+  });
+
+  test("10b. grupo encerrado durante o sorteio: só o sorteio vira erro, grupo intocado", async () => {
+    const G = await grupoCom(3);
+    const sorteioId = await pedirSorteio(G, 1);
+    const carga = (await carregar(admin, sorteioId)) as Carga;
+    await G.org.db.transact(G.org.db.tx.grupos[G.grupoId]!.update({ status: "encerrado" }));
+    expect(await gravarPares(admin, SEGREDO_TESTE, sorteioId, carga)).toEqual({ erro: "O grupo foi encerrado." });
+    const g = await lerGrupo(G.grupoId);
+    expect(g.status).toBe("encerrado");
+    expect(g.rodadaAtual).toBe(0);
+    expect(await paresDoGrupo(G.grupoId)).toHaveLength(0);
   });
 });

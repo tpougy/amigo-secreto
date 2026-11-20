@@ -52,21 +52,43 @@ export const specSortear = defineWorkflowSpec<Entrada, Saida>({
 });
 
 export const MSG_RODADA_INVALIDA = "Rodada inválida";
+export const MSG_PARTICIPANTES_MUDARAM = "Os participantes mudaram durante o sorteio. Tente de novo.";
+export const MSG_GRUPO_ENCERRADO = "O grupo foi encerrado.";
 
 /** Stream de progresso do sorteio (lido pelo PainelSorteio; regra em `$streams`). */
 export const streamDoSorteio = (sorteioId: string) => `sorteio-${sorteioId}`;
 const fase = (db: AdminDb, sorteioId: string, f: "embaralhando" | "sorteando" | "pronto" | "erro") =>
   escreverFase(db, streamDoSorteio(sorteioId), f, f === "pronto" || f === "erro");
 
-/** Marca o sorteio como `erro` e libera a chave `<grupoId>:<rodada>` (ruling do worker). */
-async function marcarErro(
+/**
+ * Estado atual do sorteio e do grupo, lido de novo dentro do passo que vai escrever.
+ * Sem isto, um `update` num sorteio/grupo apagado (cascata ao apagar o grupo) recriaria
+ * registros fantasmas: no Instant, `update` em id inexistente cria o registro.
+ */
+async function estadoAtual(db: AdminDb, sorteioId: string) {
+  const { sorteios } = await db.query({
+    sorteios: { $: { where: { id: sorteioId } }, pares: {}, grupo: { participantes: {} } },
+  });
+  const s = sorteios[0];
+  return s?.grupo ? { s, g: s.grupo } : undefined;
+}
+
+/**
+ * Marca o sorteio como `erro` e libera a chave `<grupoId>:<rodada>` (ruling do worker).
+ * Se o sorteio ou o grupo não existem mais (grupo apagado), não escreve nada.
+ */
+export async function marcarErro(
   db: AdminDb,
   sorteioId: string,
   grupoId: string,
   rodada: number,
   mensagem: string,
   codigo: string,
-): Promise<void> {
+): Promise<boolean> {
+  if (!(await estadoAtual(db, sorteioId))) {
+    log("sorteio.grupo_sumiu", { sorteioId });
+    return false;
+  }
   await db.transact(
     db.tx.sorteios[sorteioId]!.update({
       status: "erro",
@@ -77,6 +99,7 @@ async function marcarErro(
   );
   fase(db, sorteioId, "erro");
   log("sorteio.erro", { sorteioId, codigo });
+  return true;
 }
 
 /**
@@ -127,13 +150,44 @@ export async function carregar(
   return { grupoId: g.id, rodada: s.rodada, participantes, restricoes, paresAntigos };
 }
 
+export type ResultadoGravar = { pares: number } | { erro: string } | { ignorar: true };
+
 /**
- * Passo `gravar-pares`, numa única transação: apaga os pares da rodada anterior
- * (doador/receptor são one-to-one), grava os novos por upsert na chave
- * `<sorteioId>:<doador>`, marca o grupo `sorteado` e o sorteio `concluido`.
- * Reexecutar é seguro: os mesmos pares (seed fixa) caem nas mesmas chaves.
+ * Passo `gravar-pares`. Antes de escrever, relê o estado no mesmo passo:
+ * - sorteio ou grupo sumiram (grupo apagado) → `{ ignorar }`, sem escrita nenhuma;
+ * - sorteio já `concluido` (reexecução do passo) → devolve a contagem gravada;
+ * - sorteio já em `erro` → `{ ignorar }`;
+ * - grupo `encerrado` → erro (só o sorteio é marcado; grupo e pares intocados);
+ * - participantes ativos diferentes do `carregar` → erro "Os participantes mudaram…".
+ * Senão, numa única transação: apaga os pares da rodada anterior (doador/receptor são
+ * one-to-one), grava os novos por upsert na chave `<sorteioId>:<doador>`, marca o grupo
+ * `sorteado` e o sorteio `concluido`. Reexecutar é seguro: os mesmos pares (seed fixa)
+ * caem nas mesmas chaves.
  */
-export async function gravarPares(db: AdminDb, segredo: string, sorteioId: string, carga: Carga): Promise<number> {
+export async function gravarPares(
+  db: AdminDb,
+  segredo: string,
+  sorteioId: string,
+  carga: Carga,
+): Promise<ResultadoGravar> {
+  const atual = await estadoAtual(db, sorteioId);
+  if (!atual) {
+    log("sorteio.grupo_sumiu", { sorteioId });
+    return { ignorar: true };
+  }
+  const { s, g } = atual;
+  if (s.status === "concluido") return { pares: s.pares.length };
+  if (s.status !== "pendente" && s.status !== "processando") return { ignorar: true };
+  if (g.status === "encerrado") {
+    await marcarErro(db, sorteioId, carga.grupoId, carga.rodada, MSG_GRUPO_ENCERRADO, "grupo-encerrado");
+    return { erro: MSG_GRUPO_ENCERRADO };
+  }
+  const ativos = g.participantes.filter((p) => !p.removido).map((p) => p.id).sort();
+  if (ativos.join(",") !== carga.participantes.join(",")) {
+    await marcarErro(db, sorteioId, carga.grupoId, carga.rodada, MSG_PARTICIPANTES_MUDARAM, "participantes-mudaram");
+    return { erro: MSG_PARTICIPANTES_MUDARAM };
+  }
+
   const pares = sortear(carga.participantes, carga.restricoes, seedDoSorteio(segredo, sorteioId));
   await db.transact([
     ...carga.paresAntigos.map((p) => db.tx.pares[p]!.delete()),
@@ -146,7 +200,7 @@ export async function gravarPares(db: AdminDb, segredo: string, sorteioId: strin
     db.tx.grupos[carga.grupoId]!.update({ status: "sorteado", rodadaAtual: carga.rodada }),
     db.tx.sorteios[sorteioId]!.update({ status: "concluido", concluidoEm: Date.now(), erro: null }),
   ]);
-  return pares.length;
+  return { pares: pares.length };
 }
 
 /**
@@ -167,11 +221,14 @@ export function definirSorteio(
     if ("ignorar" in carga) return { pares: 0 };
     if ("erro" in carga) return { erro: carga.erro };
 
-    await step.run({ name: "marcar-processando", retryPolicy: RETRY_PASSO }, async () => {
+    const marcado = await step.run({ name: "marcar-processando", retryPolicy: RETRY_PASSO }, async () => {
+      // Grupo apagado nesse meio tempo: não recriar o sorteio como fantasma.
+      if (!(await estadoAtual(db, sorteioId))) return false;
       await db.transact(db.tx.sorteios[sorteioId]!.update({ status: "processando" }));
       fase(db, sorteioId, "embaralhando");
-      return null;
+      return true;
     });
+    if (!marcado) return { pares: 0 };
 
     const resultado = await step.run({ name: "sortear", retryPolicy: RETRY_PASSO }, async () => {
       fase(db, sorteioId, "sorteando");
@@ -186,14 +243,16 @@ export function definirSorteio(
     });
     if ("erro" in resultado) return resultado;
 
-    const pares = await step.run({ name: "gravar-pares", retryPolicy: RETRY_PASSO }, async () => {
-      const n = await gravarPares(db, segredo, sorteioId, carga);
+    const gravado = await step.run({ name: "gravar-pares", retryPolicy: RETRY_PASSO }, async () => {
+      const r = await gravarPares(db, segredo, sorteioId, carga);
+      if (!("pares" in r)) return r;
       fase(db, sorteioId, "pronto");
       const inicio = run.startedAt ? new Date(run.startedAt).getTime() : Date.now();
-      log("sorteio.concluido", { sorteioId, pares: n, duracaoMs: Date.now() - inicio });
-      return n;
+      log("sorteio.concluido", { sorteioId, pares: r.pares, duracaoMs: Date.now() - inicio });
+      return r;
     });
-    return { pares };
+    if ("ignorar" in gravado) return { pares: 0 };
+    return gravado;
   });
 }
 
