@@ -1,15 +1,17 @@
 // Workflow `sortear`: do sorteio pendente no Instant aos pares gravados.
 // Inputs/outputs dos passos ficam no ow.db e aparecem no painel: só ids e contagens.
 // Os pares (quem tira quem) NÃO saem do passo `sortear`; `gravar-pares` os recalcula
-// (o sorteio é determinístico pela seed = sorteioId), então nunca vão para o ow.db.
+// (o sorteio é determinístico pela seed = HMAC(SORTEIO_SEGREDO, sorteioId), ver nucleo/seed.ts),
+// então nunca vão para o ow.db. A seed também não: é recalculada dentro de cada passo.
 import { lookup, type InstantAdminDatabase } from "@instantdb/admin";
 import { defineWorkflowSpec, type OpenWorkflow, type RetryPolicy } from "openworkflow";
-import { ErroSorteio, seedDe, sortear, type Restricao } from "@amigo/dominio";
+import { ErroSorteio, sortear, type Restricao } from "@amigo/dominio";
 import type { AppSchema } from "../../instant.schema";
 import { assinaturaInstant, iniciarCampainha } from "../nucleo/campainha";
 import { dispararComRetomada } from "../nucleo/disparar";
 import { log } from "../nucleo/log";
 import { escreverFase } from "../nucleo/progresso";
+import { seedDoSorteio } from "../nucleo/seed";
 
 export type AdminDb = InstantAdminDatabase<AppSchema>;
 
@@ -131,8 +133,8 @@ export async function carregar(
  * `<sorteioId>:<doador>`, marca o grupo `sorteado` e o sorteio `concluido`.
  * Reexecutar é seguro: os mesmos pares (seed fixa) caem nas mesmas chaves.
  */
-export async function gravarPares(db: AdminDb, sorteioId: string, carga: Carga): Promise<number> {
-  const pares = sortear(carga.participantes, carga.restricoes, seedDe(sorteioId));
+export async function gravarPares(db: AdminDb, segredo: string, sorteioId: string, carga: Carga): Promise<number> {
+  const pares = sortear(carga.participantes, carga.restricoes, seedDoSorteio(segredo, sorteioId));
   await db.transact([
     ...carga.paresAntigos.map((p) => db.tx.pares[p]!.delete()),
     ...pares.map((p) => {
@@ -149,10 +151,15 @@ export async function gravarPares(db: AdminDb, sorteioId: string, carga: Carga):
 
 /**
  * Registra o workflow `sortear` (versão "1") no cliente do OpenWorkflow.
- * `retryPasso` só existe para os testes forçarem uma falha rápida.
+ * `segredo` = SORTEIO_SEGREDO (seed). `retryPasso` só existe para os testes forçarem uma falha rápida.
  */
-export function definirSorteio(ow: OpenWorkflow, db: AdminDb, opcoes: { retryPasso?: Partial<RetryPolicy> } = {}) {
+export function definirSorteio(
+  ow: OpenWorkflow,
+  db: AdminDb,
+  opcoes: { segredo: string; retryPasso?: Partial<RetryPolicy> },
+) {
   const RETRY_PASSO = opcoes.retryPasso ?? RETRY_PASSO_PADRAO;
+  const { segredo } = opcoes;
   return ow.defineWorkflow(specSortear, async ({ input, step, run }): Promise<Saida> => {
     const { sorteioId } = input;
 
@@ -169,7 +176,7 @@ export function definirSorteio(ow: OpenWorkflow, db: AdminDb, opcoes: { retryPas
     const resultado = await step.run({ name: "sortear", retryPolicy: RETRY_PASSO }, async () => {
       fase(db, sorteioId, "sorteando");
       try {
-        return { pares: sortear(carga.participantes, carga.restricoes, seedDe(sorteioId)).length };
+        return { pares: sortear(carga.participantes, carga.restricoes, seedDoSorteio(segredo, sorteioId)).length };
       } catch (e) {
         // Falha definitiva: marca erro e termina sem retry (não lança).
         if (!(e instanceof ErroSorteio)) throw e;
@@ -180,7 +187,7 @@ export function definirSorteio(ow: OpenWorkflow, db: AdminDb, opcoes: { retryPas
     if ("erro" in resultado) return resultado;
 
     const pares = await step.run({ name: "gravar-pares", retryPolicy: RETRY_PASSO }, async () => {
-      const n = await gravarPares(db, sorteioId, carga);
+      const n = await gravarPares(db, segredo, sorteioId, carga);
       fase(db, sorteioId, "pronto");
       const inicio = run.startedAt ? new Date(run.startedAt).getTime() : Date.now();
       log("sorteio.concluido", { sorteioId, pares: n, duracaoMs: Date.now() - inicio });

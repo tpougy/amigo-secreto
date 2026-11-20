@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ErroSorteio, seedDe, sortear, type Restricao } from "./sortear";
+import { ErroSorteio, sortear, type Restricao } from "./sortear";
 
 const ids = (n: number) => Array.from({ length: n }, (_, i) => `p${i}`);
 
@@ -135,9 +135,5 @@ describe("sortear", () => {
       }
       expect(sortear([...p].reverse(), restricoes, `d-${s}`)).toEqual(pares);
     }
-  });
-
-  test("seedDe é identidade", () => {
-    expect(seedDe("abc")).toBe("abc");
   });
 });

@@ -92,7 +92,8 @@ Retry com backoff ✅ · idempotência por chave ✅ · `kill -9` no meio de um 
 3. O workflow `sortear` tem estes passos, **cada um idempotente**:
    1. `carregar`: lê participantes e restrições pelo admin SDK. Se o sorteio não está mais `pendente`/`processando`, termina sem fazer nada.
    2. `marcar-processando`: grava o status no Instant.
-   3. `sortear`: chama `dominio/sortear()`, que é pura. Usa uma seed **derivada do `sorteioId`** e guardada no resultado do passo, para que uma reexecução gere os mesmos pares.
+   3. `sortear`: chama `dominio/sortear()`, que é pura. A seed é **`HMAC-SHA256(SORTEIO_SEGREDO, sorteioId)`**, calculada no worker, para que uma reexecução gere os mesmos pares. A seed não é guardada no resultado do passo (nem no `ow.db`, nem em log): cada passo a recalcula. O `SORTEIO_SEGREDO` vive **só** no `dokku config` do `amigo-worker` (gerado na VPS por `infra/provisionar.sh`, nunca regenerado), e o worker se recusa a subir sem ele.
+      - *Por quê (revisão do piloto):* a 1ª versão usava o próprio `sorteioId` como seed. Membros veem o `sorteioId` e os ids dos participantes, o organizador vê as restrições, e o `sorteioId` é gerado no cliente pelo organizador: qualquer um recalcularia todos os pares offline com `dominio/sortear`, e o organizador poderia gerar ids até obter o par que quisesse. Com o HMAC, sem o segredo do worker a seed é imprevisível.
    4. `gravar-pares`: cada par usa uma chave única (`<sorteioId>:<doadorId>`), então regravar não duplica. Na mesma transação, o sorteio vira `concluido` e o grupo vira `sorteado`.
 4. **Falha definitiva** (por exemplo, restrições impossíveis, que não devem ser tentadas de novo): o status vira `erro` com uma mensagem legível, e a UI mostra "tentar de novo", o que cria um novo sorteio.
 

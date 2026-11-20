@@ -11,11 +11,6 @@ export class ErroSorteio extends Error {
   }
 }
 
-/** Identidade documentada: o worker passa o `sorteioId` como seed. */
-export function seedDe(texto: string): string {
-  return texto;
-}
-
 const TENTATIVAS_CICLO = 1000;
 
 function fnv1a(texto: string): number {
@@ -46,6 +41,10 @@ function embaralhar<T>(lista: T[], rnd: () => number): T[] {
   return r;
 }
 
+/**
+ * Sorteio determinístico pela `seed`. A seed precisa ser secreta (o worker usa
+ * HMAC(SORTEIO_SEGREDO, sorteioId)): quem a conhece recalcula todos os pares.
+ */
 export function sortear(participantes: string[], restricoes: Restricao[], seed: string): Par[] {
   const ids = [...new Set(participantes)].sort();
   const n = ids.length;

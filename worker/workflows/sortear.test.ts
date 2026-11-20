@@ -7,6 +7,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { id } from "@instantdb/admin";
 import { OpenWorkflow } from "openworkflow";
+import { sortear } from "@amigo/dominio";
+import { seedDoSorteio } from "../nucleo/seed";
 import { BackendSqlite } from "openworkflow/sqlite";
 import {
   adminTeste,
@@ -35,13 +37,19 @@ const PREFIXO = novoPrefixo("worker-sortear");
 const admin = adminTeste();
 const DIR = process.env.OW_TESTE_DIR ?? tmpdir();
 const OW_DB = join(DIR, `ow-teste-${PREFIXO}.db`);
+/** Segredo da seed só para os testes (em produção: `dokku config` do amigo-worker). */
+const SEGREDO_TESTE = "0123456789abcdef".repeat(4);
 
 type Ambiente = Awaited<ReturnType<typeof montar>>;
 
-async function montar(arquivo: string, db: AdminDb = admin, opcoes: Parameters<typeof definirSorteio>[2] = {}) {
+async function montar(
+  arquivo: string,
+  db: AdminDb = admin,
+  opcoes: Omit<Parameters<typeof definirSorteio>[2], "segredo"> = {},
+) {
   const backend = BackendSqlite.connect(arquivo);
   const ow = new OpenWorkflow({ backend });
-  const wf = definirSorteio(ow, db, opcoes);
+  const wf = definirSorteio(ow, db, { segredo: SEGREDO_TESTE, ...opcoes });
   const worker = ow.newWorker({ concurrency: 1 });
   await worker.start();
   return {
@@ -240,6 +248,12 @@ describe("workflow sortear", () => {
       receptores.add(r.pares[0]!.receptor!.id);
     }
     expect(receptores.size).toBe(4);
+    // A seed é HMAC(segredo, sorteioId): os pares gravados batem com ela.
+    const esperado = sortear(G1.participantes, [], seedDoSorteio(SEGREDO_TESTE, sorteio1))
+      .map((p) => `${p.doador}>${p.receptor}`)
+      .sort();
+    const gravados = (await paresDoGrupo(G1.grupoId)).map((p) => `${p.doador!.id}>${p.receptor!.id}`).sort();
+    expect(gravados).toEqual(esperado);
     // Progresso por stream: as três fases, na ordem.
     expect(await lerProgresso(sorteio1)).toBe("embaralhando\nsorteando\npronto\n");
   });
@@ -442,9 +456,9 @@ describe("workflow sortear", () => {
     const carga = (await carregar(admin, sorteioId)) as Carga;
     expect(carga.participantes).toHaveLength(4);
 
-    expect(await gravarPares(admin, sorteioId, carga)).toBe(4);
+    expect(await gravarPares(admin, SEGREDO_TESTE, sorteioId, carga)).toBe(4);
     const primeira = (await paresDoGrupo(G.grupoId)).map((p) => `${p.id}|${p.doador!.id}|${p.receptor!.id}`).sort();
-    expect(await gravarPares(admin, sorteioId, carga)).toBe(4);
+    expect(await gravarPares(admin, SEGREDO_TESTE, sorteioId, carga)).toBe(4);
     const segunda = (await paresDoGrupo(G.grupoId)).map((p) => `${p.id}|${p.doador!.id}|${p.receptor!.id}`).sort();
 
     expect(primeira).toHaveLength(4);
@@ -465,7 +479,7 @@ describe("workflow sortear", () => {
     };
     const antes = (await paresDoGrupo(G1.grupoId)).map((p) => `${p.id}|${p.doador!.id}|${p.receptor!.id}`).sort();
     expect(antes).toHaveLength(3);
-    expect(await gravarPares(admin, sorteio2, carga)).toBe(3);
+    expect(await gravarPares(admin, SEGREDO_TESTE, sorteio2, carga)).toBe(3);
     const depois = (await paresDoGrupo(G1.grupoId)).map((p) => `${p.id}|${p.doador!.id}|${p.receptor!.id}`).sort();
     expect(depois).toEqual(antes);
     expect((await lerGrupo(G1.grupoId)).rodadaAtual).toBe(2);

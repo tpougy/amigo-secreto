@@ -1,10 +1,12 @@
 // Processo principal do worker: OpenWorkflow (SQLite) + campainha do Instant.
-// Env: INSTANT_APP_ID, INSTANT_ADMIN_TOKEN, INSTANT_API_URI, OW_DB (/data/ow.db), OW_CONCORRENCIA (2).
+// Env: SORTEIO_SEGREDO, INSTANT_APP_ID, INSTANT_ADMIN_TOKEN, INSTANT_API_URI, OW_DB (/data/ow.db),
+// OW_CONCORRENCIA (2).
 import { init } from "@instantdb/admin";
 import { OpenWorkflow } from "openworkflow";
 import { BackendSqlite } from "openworkflow/sqlite";
 import schema from "../instant.schema";
 import { log } from "./nucleo/log";
+import { validarSegredo } from "./nucleo/seed";
 import { definirApagarConta, processarPedidosExclusao } from "./workflows/apagarConta";
 import { definirSorteio, processarPendentes } from "./workflows/sortear";
 
@@ -20,6 +22,16 @@ function exigir(nome: string): string {
   return v;
 }
 
+// Segredo da seed do sorteio (ver nucleo/seed.ts). Sem ele, o worker não sobe: sortear com uma
+// seed previsível exporia os pares.
+let segredo: string;
+try {
+  segredo = validarSegredo(process.env.SORTEIO_SEGREDO);
+} catch (e) {
+  log("worker.segredo_invalido", { motivo: (e as Error).message });
+  process.exit(1);
+}
+
 const db = init({
   appId: exigir("INSTANT_APP_ID"),
   adminToken: exigir("INSTANT_ADMIN_TOKEN"),
@@ -30,7 +42,7 @@ const concorrencia = Number(process.env.OW_CONCORRENCIA ?? "2") || 2;
 
 const backend = BackendSqlite.connect(process.env.OW_DB ?? "/data/ow.db");
 const ow = new OpenWorkflow({ backend });
-definirSorteio(ow, db);
+definirSorteio(ow, db, { segredo });
 definirApagarConta(ow, db);
 
 const worker = ow.newWorker({ concurrency: concorrencia });

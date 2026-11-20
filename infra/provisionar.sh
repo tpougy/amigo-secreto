@@ -4,7 +4,8 @@
 # Idempotente: cada passo confere o estado antes de mudar; a última linha diz quantas mudanças houve.
 # Segredos (app_id/admin_token do Instant de produção) são lidos na própria VPS de
 # /root/instant-apps/amigo-secreto.env e nunca passam por esta máquina nem pela saída.
-# As chaves do MCP (MCP_ENCRYPTION_KEY/MCP_JWT_KEY) são geradas na VPS uma única vez: gerar de novo
+# O SORTEIO_SEGREDO (seed do sorteio, só no amigo-worker) e as chaves do MCP
+# (MCP_ENCRYPTION_KEY/MCP_JWT_KEY) são gerados na VPS uma única vez: gerar de novo mudaria a seed ou
 # invalidaria as sessões OAuth já emitidas. As credenciais do Google começam como `pendente` e só
 # são gravadas se ainda não existirem (o valor real, configurado depois, nunca é sobrescrito).
 set -euo pipefail
@@ -117,6 +118,12 @@ admin_token=$(grep -m1 '^admin_token=' "$SEGREDOS" | cut -d= -f2-)
 [ -n "$app_id" ] && [ -n "$admin_token" ] || { echo "faltam app_id/admin_token em $SEGREDOS" >&2; exit 1; }
 cfg amigo-worker INSTANT_APP_ID="$app_id" INSTANT_ADMIN_TOKEN="$admin_token"
 unset app_id admin_token
+# Segredo da seed do sorteio (HMAC): só no amigo-worker, gerado aqui uma única vez e nunca
+# impresso. Regenerar mudaria a seed de sorteios em andamento; nunca sobrescrever.
+if [ -n "$(dokku config:get amigo-worker SORTEIO_SEGREDO 2>/dev/null || true)" ]; then ok "SORTEIO_SEGREDO definido"; else
+  dokku config:set --no-restart amigo-worker "SORTEIO_SEGREDO=$(openssl rand -hex 32)" >/dev/null
+  mudou "amigo-worker config:set SORTEIO_SEGREDO (novo)"
+fi
 
 echo "== amigo-painel (127.0.0.1:3999, só por túnel)"
 PORTA="-p 127.0.0.1:3999:3999"
