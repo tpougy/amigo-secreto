@@ -86,8 +86,11 @@ if [ "$(rep ps amigo-worker ps-stop-timeout-seconds)" = 30 ]; then ok "stop-time
   dokku ps:set amigo-worker stop-timeout-seconds 30 >/dev/null
   mudou "ps:set stop-timeout-seconds 30"
 fi
-ESCALA=$(dokku ps:scale amigo-worker 2>/dev/null | awk '$1 ~ /^(web|worker):?$/ {gsub(":","",$1); print $1"="$2}' | sort | tr '\n' ' ')
-if [ "$ESCALA" = "web=0 worker=1 " ]; then ok "escala web=0 worker=1"; else
+# Depois do deploy o `ps:scale` omite tipos com 0; ausente conta como 0.
+ESCALA=$(dokku ps:scale amigo-worker 2>/dev/null | awk '
+  $1 ~ /^(web|worker):$/ { sub(":", "", $1); n[$1] = $2 }
+  END { printf "web=%d worker=%d", n["web"], n["worker"] }')
+if [ "$ESCALA" = "web=0 worker=1" ]; then ok "escala web=0 worker=1"; else
   dokku ps:scale --skip-deploy amigo-worker web=0 worker=1 >/dev/null
   mudou "ps:scale web=0 worker=1 (antes: ${ESCALA:-vazio})"
 fi
@@ -105,6 +108,13 @@ PORTA="-p 127.0.0.1:3999:3999"
 if rep docker-options amigo-painel docker-options-deploy | grep -qF -- "$PORTA"; then ok "docker-options $PORTA"; else
   dokku docker-options:add amigo-painel deploy "$PORTA" >/dev/null
   mudou "docker-options:add deploy $PORTA"
+fi
+# O Dokku injeta PORT = porta do container no mapa de portas (detectado: 5000), por cima do
+# config:set PORT. Fixar o mapa em 3999 faz o PORT injetado ser 3999. Sem proxy, nada é publicado
+# por causa do mapa; a única publicação é o -p 127.0.0.1 acima.
+if [ "$(rep ports amigo-painel ports-map)" = http:3999:3999 ]; then ok "ports http:3999:3999"; else
+  dokku ports:set amigo-painel http:3999:3999 >/dev/null
+  mudou "ports:set http:3999:3999"
 fi
 # A porta fixa no host impede o container novo de subir com o antigo vivo: sem zero-downtime.
 if [ "$(rep checks amigo-painel checks-disabled-list)" = _all_ ]; then ok "checks desligados"; else
