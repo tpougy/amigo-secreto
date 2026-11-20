@@ -40,8 +40,23 @@
 		</li>
 	</ul>
 
+	<h2>Cópias de segurança</h2>
+	<p>
+		O banco de dados tem cópias de segurança diárias, guardadas por <strong>30 dias</strong>, e o provedor
+		do servidor guarda uma imagem diária da máquina por cerca de <strong>1 dia</strong>. Por isso, algo que
+		você apagou pode continuar nessas cópias até elas expirarem. Elas só são usadas para recuperar o app
+		depois de uma falha.
+	</p>
+
+	<h2>Assistente de IA (MCP)</h2>
+	<p>
+		Se você conectar o app a um assistente de IA (Claude, ChatGPT ou outro), o que o assistente pedir é
+		enviado ao provedor que <strong>você</strong> escolheu, sob as regras de privacidade dele. Isso inclui as
+		respostas de perfil de quem você tirou no sorteio, quando você pergunta pelo seu amigo secreto.
+	</p>
+
 	<h2>O que não fazemos</h2>
-	<p>Sem anúncios. Seus dados não são vendidos nem compartilhados com terceiros.</p>
+	<p>Sem anúncios. Seus dados não são vendidos nem compartilhados com terceiros, fora o envio ao assistente de IA que você mesmo conectar.</p>
 
 	<h2>Contato</h2>
 	<p>Dúvidas ou pedidos: <a href="mailto:thomazpougy@gmail.com">thomazpougy@gmail.com</a>.</p>
