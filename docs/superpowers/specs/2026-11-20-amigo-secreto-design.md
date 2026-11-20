@@ -59,7 +59,7 @@ VPS ─────────────────────────�
         │                                                    ▲
         │   amigo-painel (Bun) ── @openworkflow/dashboard ───┘   127.0.0.1:3999
         │
-        └── amigo-mcp (Bun, mcp.amigo.tpou.gy) ── asUser
+        └── amigo-mcp (Bun, amigo-mcp.app.tpou.gy) ── asUser
 ─────────────────────────────────────────────────────────────────────────
   Thomaz: ssh -N -L 3999:127.0.0.1:3999 vps-mercurio → http://localhost:3999
 ```
@@ -134,7 +134,7 @@ Retry com backoff ✅ · idempotência por chave ✅ · `kill -9` no meio de um 
 |---|---|---|---|
 | `amigo-worker` | `worker` (sem `web`, sem Nginx) | Só saída | `amigo-workflows` → `/data` |
 | `amigo-painel` | Painel | `127.0.0.1:3999` | `amigo-workflows` → `/data` |
-| `amigo-mcp` | `web` | `mcp.amigo.tpou.gy` (Let's Encrypt) | — |
+| `amigo-mcp` | `web` | `amigo-mcp.app.tpou.gy` (Let's Encrypt) | — |
 
 - Dockerfiles `FROM oven/bun:<versão>@sha256:<digest>`, cada serviço com seu `build-dir`, deploy por `git push dokku@vps-mercurio:<app> main`.
 - Os scripts de provisionamento, que são idempotentes, ficam em `infra/` neste repo: criar app, volume, montagem, `config:set` sem segredos, timeout de parada e portas.
@@ -171,7 +171,7 @@ amigo-secreto/
 
 - **§4 Modelo:**
   - `sorteios` ganha `chave` (única) e `rodada`.
-  - `pares` ganha `chave` (única) e `vistoEm`.
+  - `pares` ganha `chave` (única); `participantes` ganha `viuParNaRodada`.
   - `grupos` ganha `rodadaAtual`.
   - `participantes` ganha `removido`.
   - O status do sorteio é escrito só pelo worker (admin).
@@ -193,7 +193,7 @@ amigo-secreto/
 
 - **Escopo:** todas as funcionalidades do `ideias.md` entram, inclusive MCP, painel, Streams, capa e exportação. Não há prazo apertado: o evento real é depois da implementação.
 - **Refazer sorteio:**
-  - O app registra quando cada participante **abre o próprio par pela primeira vez** (`pares.vistoEm`, escrito pelo próprio doador).
+  - O app registra quando cada participante **abre o próprio par pela primeira vez** (`participantes.viuParNaRodada`, escrito pelo próprio participante).
   - Enquanto ninguém viu, o organizador refaz com uma confirmação simples.
   - Depois que alguém viu, refazer exige **confirmação forte** mostrando quantos já viram. Os nomes não aparecem, para não vazar quem está em qual par.
   - Refazer **apaga os pares da rodada anterior**, incrementa `rodada` e cria um novo `sorteio`.
@@ -208,7 +208,7 @@ amigo-secreto/
 - **MCP:** usa o `fastmcp` do punkpeye, que **já tem `GoogleProvider`** (confirmado pelo Thomaz).
 
 ### Decisões do autor (corrigíveis)
-- **Plano B da prévia por código:** se `ruleParams` ou `rateLimit` não funcionarem no instantdb-rust, a prévia passa por um endpoint HTTP no `amigo-worker`, com o admin token, rate limit próprio e resposta só com os campos públicos do grupo. O worker ganha então um processo `web` em `api.amigo.tpou.gy`.
+- **Plano B da prévia por código:** se `ruleParams` ou `rateLimit` não funcionarem no instantdb-rust, a prévia passa por um endpoint HTTP no `amigo-worker`, com o admin token, rate limit próprio e resposta só com os campos públicos do grupo. O worker ganha então um processo `web` em `amigo-api.app.tpou.gy`.
 - **Uso do `asUser`:** o MCP guarda o admin token e age sempre via `asUser({ email })` do usuário autenticado no OAuth do MCP. Fica coberto pela suíte de permissões.
 
 ## 10. Pendências marcadas ⚠️ (validar antes de depender)
