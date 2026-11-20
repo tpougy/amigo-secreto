@@ -6,7 +6,8 @@
 	// Perfil do participante: um campo por `DefCampo` do grupo, na ordem. Valida com `validarResposta`,
 	// grava as respostas (upsert por `chave` única), apaga as esvaziadas e recalcula `perfilCompleto`.
 	import { id, lookup } from '@instantdb/core';
-	import { limparRespostas, perfilCompleto, validarResposta, type DefCampo, type ValorResposta } from '@amigo/dominio';
+	import { perfilCompleto, type DefCampo } from '@amigo/dominio';
+	import { prepararPerfil, valorInicial, type ValorBruto } from '#lib/perfil.js';
 	import { db } from '#lib/instant.js';
 	import { mensagemDeErro } from '#lib/erros.js';
 	import { Button } from '#lib/components/ui/button/index.js';
@@ -33,18 +34,13 @@
 
 	const ordenados = $derived([...campos].sort((a, b) => a.ordem - b.ordem));
 
-	// Valores brutos dos campos: texto, ou lista de strings (lista, múltipla).
-	function inicial(): Record<string, string | string[]> {
-		const v: Record<string, string | string[]> = {};
-		for (const c of campos) {
-			const salvo = respostas.find((r) => r.campoId === c.id)?.valor;
-			if (c.tipo === 'lista') v[c.id] = Array.isArray(salvo) ? salvo.map(String) : [''];
-			else if (c.tipo === 'multipla') v[c.id] = Array.isArray(salvo) ? salvo.map(String) : [];
-			else v[c.id] = typeof salvo === 'string' ? salvo : '';
-		}
+	// Valores brutos dos campos (opções removidas já podadas); ver `lib/perfil.ts`.
+	function inicial(): Record<string, ValorBruto> {
+		const v: Record<string, ValorBruto> = {};
+		for (const c of campos) v[c.id] = valorInicial(c, respostas.find((r) => r.campoId === c.id)?.valor);
 		return v;
 	}
-	let valores = $state<Record<string, string | string[]>>(inicial());
+	let valores = $state<Record<string, ValorBruto>>(inicial());
 	let erros = $state<Record<string, string>>({});
 	let erroGeral = $state<string | null>(null);
 	let salvando = $state(false);
@@ -58,15 +54,9 @@
 		e.preventDefault();
 		if (salvando) return;
 		erroGeral = null;
-		const novosErros: Record<string, string> = {};
-		const limpas: Record<string, ValorResposta> = {};
-		for (const c of ordenados) {
-			const r = validarResposta(c, valores[c.id]);
-			if (!r.ok) novosErros[c.id] = r.erro;
-		}
+		const { erros: novosErros, limpas } = prepararPerfil(ordenados, valores);
 		erros = novosErros;
 		if (Object.keys(novosErros).length > 0) return;
-		Object.assign(limpas, limparRespostas(ordenados, valores));
 
 		salvando = true;
 		try {
@@ -176,6 +166,15 @@
 							<Label for="op-{c.id}-{o}" class="font-medium">{o}</Label>
 						</div>
 					{/each}
+					{#if !c.obrigatorio && valores[c.id]}
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							class="self-start border-2 font-bold afunda"
+							onclick={() => (valores[c.id] = '')}>Limpar</Button
+						>
+					{/if}
 				</RadioGroup.Root>
 			{/if}
 

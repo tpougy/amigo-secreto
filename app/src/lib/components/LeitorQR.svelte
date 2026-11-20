@@ -57,7 +57,7 @@
 		await v.play().catch(() => {});
 		iniciando = false;
 
-		const detector = criarDetector();
+		let detector = criarDetector();
 		const tela = document.createElement('canvas');
 		const ctx = tela.getContext('2d', { willReadFrequently: true });
 		let ocupado = false;
@@ -68,10 +68,17 @@
 				ocupado = true;
 				try {
 					let texto: string | null = null;
+					let usarJsQR = !detector;
 					if (detector) {
-						const r = await detector.detect(v);
-						texto = r[0]?.rawValue ?? null;
-					} else if (ctx) {
+						try {
+							texto = (await detector.detect(v))[0]?.rawValue ?? null;
+						} catch {
+							// BarcodeDetector existe mas falhou: cai para o jsQR daqui em diante.
+							detector = null;
+							usarJsQR = true;
+						}
+					}
+					if (usarJsQR && ctx) {
 						// jsQR: reduz o quadro para no máximo 640px de largura.
 						const esc = Math.min(1, 640 / v.videoWidth);
 						tela.width = Math.round(v.videoWidth * esc);
