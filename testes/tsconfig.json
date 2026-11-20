@@ -1,0 +1,4 @@
+{
+  "extends": "../tsconfig.base.json",
+  "include": ["**/*.ts", "../instant.schema.ts", "../instant.perms.ts"]
+}

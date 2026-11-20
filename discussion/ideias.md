@@ -409,7 +409,11 @@ amigo-secreto/
 
 | Data | Área | O que aconteceu | Impacto no Pluto | Ação |
 |---|---|---|---|---|
-| | | | | |
+| 2026-11-20 | Permissões | `ruleParams.codigo == data.codigo` funciona no instantdb-rust: sem código, ou com código errado, a consulta de `grupos` volta `[]`; com o código certo e **sem** `where`, só aquele grupo aparece. Nenhum participante ou resposta vaza pela prévia | Padrão validado para convites por código (Nutri → paciente) | Coberto por `testes/permissoes.grupos.test.ts` (testes 1–5) |
+| 2026-11-20 | Permissões | `rateLimit.entrada.limit(auth.id)` no início do `create` cobra o token **mesmo quando a regra nega** (20 `permission-denied` e a 21ª vira `rate-limited`), e o bloqueio vale também para um grupo aberto com o código certo | Rate limit em regra serve como freio a força bruta de códigos | Teste 11; manter o `rateLimit` como primeiro termo do `&&` |
+| 2026-11-20 | Permissões | Regras explícitas de `link`/`unlink` por rótulo (com `actions.data == 'create'` e `linkedData`) bloqueiam mover participante/resposta para outro grupo e "virar organizador" via `$users.link`; a checagem roda nos dois lados do link | Dá para travar a troca de dono de um registro sem gambiarra | Testes de "movido para outro grupo" e "não vira organizador" |
+| 2026-11-20 | Schema / CLI | `instant-cli pull` devolve um schema equivalente, mas troca `i.json()` por `i.any()` e inclui entidades/atributos de sistema (`$streams`, `$users.imageURL/type`, `linkedPrimaryUser`). As regras voltam idênticas | Nenhum; não usar o arquivo do `pull` como fonte da verdade | Fonte da verdade continua sendo `instant.schema.ts` do repo |
+| 2026-11-20 | Monorepo (Bun) | Com instalação isolada do Bun, o `instant.schema.ts` na raiz não enxerga pacotes dos workspaces; foi preciso pôr `@instantdb/core` como devDependency da raiz | Mesmo arranjo no Pluto | `package.json` raiz com `@instantdb/core@1.0.67` |
 
 Perguntas que o piloto deve responder:
 

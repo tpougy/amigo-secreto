@@ -1,0 +1,15 @@
+{
+  "name": "@amigo/testes",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun --env-file=../.env test"
+  },
+  "dependencies": {
+    "@instantdb/admin": "1.0.67",
+    "@amigo/dominio": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.5"
+  }
+}

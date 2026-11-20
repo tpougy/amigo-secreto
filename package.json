@@ -2,8 +2,14 @@
   "name": "amigo-secreto",
   "private": true,
   "packageManager": "bun@1.4.5",
-  "workspaces": ["dominio"],
+  "workspaces": [
+    "dominio",
+    "testes"
+  ],
   "scripts": {
     "test": "bun --filter '!app' test"
+  },
+  "devDependencies": {
+    "@instantdb/core": "1.0.67"
   }
 }
