@@ -24,11 +24,13 @@ export type Carga = {
 };
 
 /**
- * Passos que tocam o Instant: falha transitória (rede, Instant reiniciando) é refeita
- * com backoff. 10 tentativas, 1 s → 60 s: ~5 min no total, mais que um redeploy do Instant.
+ * Passos que tocam o Instant: falha transitória (rede, Instant reiniciando, desligamento
+ * das 04:30) é refeita com backoff. 300 tentativas, 1 s → 60 s: ~5 h no total. Os passos
+ * são idempotentes, então insistir é seguro. Se mesmo assim o run falhar, `dispararSorteio`
+ * abre um run novo na próxima entrega da campainha.
  */
-const RETRY_PASSO: Partial<RetryPolicy> = {
-  maximumAttempts: 10,
+const RETRY_PASSO_PADRAO: Partial<RetryPolicy> = {
+  maximumAttempts: 300,
   initialInterval: "1s",
   backoffCoefficient: 2,
   maximumInterval: "60s",
@@ -137,8 +139,12 @@ export async function gravarPares(db: AdminDb, sorteioId: string, carga: Carga):
   return pares.length;
 }
 
-/** Registra o workflow `sortear` (versão "1") no cliente do OpenWorkflow. */
-export function definirSorteio(ow: OpenWorkflow, db: AdminDb) {
+/**
+ * Registra o workflow `sortear` (versão "1") no cliente do OpenWorkflow.
+ * `retryPasso` só existe para os testes forçarem uma falha rápida.
+ */
+export function definirSorteio(ow: OpenWorkflow, db: AdminDb, opcoes: { retryPasso?: Partial<RetryPolicy> } = {}) {
+  const RETRY_PASSO = opcoes.retryPasso ?? RETRY_PASSO_PADRAO;
   return ow.defineWorkflow(specSortear, async ({ input, step, run }): Promise<Saida> => {
     const { sorteioId } = input;
 
@@ -186,8 +192,21 @@ export function processarPendentes(ow: OpenWorkflow, db: AdminDb): { parar(): vo
     nome: "sorteios",
     assinar: assinaturaInstant(db, CONSULTA_PENDENTES),
     chave: (s) => s.id,
-    disparar: async (_s, sorteioId) => {
-      await ow.runWorkflow(specSortear, { sorteioId }, { idempotencyKey: sorteioId });
-    },
+    disparar: (_s, sorteioId) => dispararSorteio(ow, sorteioId),
   });
+}
+
+/**
+ * Garante um run vivo (ou concluído) para o sorteio. A chave `sorteioId` dura 24 h e
+ * devolveria para sempre um run `failed`; nesse caso abre UM run novo com a chave
+ * `<sorteioId>:retry:<idDoRunFalho>`: determinística, então entregas repetidas da
+ * campainha caem no mesmo run. Se esse também falhar, a próxima entrega encadeia outro.
+ * (Não usar `rerunWorkflowRun`: sem chave, cada entrega criaria um rerun concorrente.)
+ */
+export async function dispararSorteio(ow: OpenWorkflow, sorteioId: string): Promise<void> {
+  let h = await ow.runWorkflow(specSortear, { sorteioId }, { idempotencyKey: sorteioId });
+  while (h.workflowRun.status === "failed") {
+    const idempotencyKey = `${sorteioId}:retry:${h.workflowRun.id}`;
+    h = await ow.runWorkflow(specSortear, { sorteioId }, { idempotencyKey });
+  }
 }

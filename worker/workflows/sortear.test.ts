@@ -17,7 +17,15 @@ import {
   novoPrefixo,
   type Usuario,
 } from "../../testes/instant-teste";
-import { carregar, definirSorteio, gravarPares, processarPendentes, type Carga } from "./sortear";
+import {
+  carregar,
+  definirSorteio,
+  dispararSorteio,
+  gravarPares,
+  processarPendentes,
+  type AdminDb,
+  type Carga,
+} from "./sortear";
 
 setDefaultTimeout(60_000);
 
@@ -28,10 +36,10 @@ const OW_DB = join(DIR, `ow-teste-${PREFIXO}.db`);
 
 type Ambiente = Awaited<ReturnType<typeof montar>>;
 
-async function montar(arquivo: string) {
+async function montar(arquivo: string, db: AdminDb = admin, opcoes: Parameters<typeof definirSorteio>[2] = {}) {
   const backend = BackendSqlite.connect(arquivo);
   const ow = new OpenWorkflow({ backend });
-  const wf = definirSorteio(ow, admin);
+  const wf = definirSorteio(ow, db, opcoes);
   const worker = ow.newWorker({ concurrency: 1 });
   await worker.start();
   return {
@@ -49,12 +57,28 @@ function apagarOwDb() {
 }
 
 /** Linhas de `workflow_runs` para a chave (lidas direto do SQLite). */
-function runsDaChave(chave: string): { id: string; status: string; attempts: number }[] {
-  const db = new Database(OW_DB, { readonly: true });
+function runsDaChave(chave: string, arquivo = OW_DB): { id: string; status: string; attempts: number }[] {
+  const db = new Database(arquivo, { readonly: true });
   try {
     return db
       .query("select id, status, attempts from workflow_runs where idempotency_key = ?")
       .all(chave) as { id: string; status: string; attempts: number }[];
+  } finally {
+    db.close();
+  }
+}
+
+/** Tentativas do passo `passo` nos runs da chave. */
+function tentativasDoPasso(chave: string, passo: string): number {
+  const db = new Database(OW_DB, { readonly: true });
+  try {
+    const r = db
+      .query(
+        `select count(*) as n from step_attempts sa join workflow_runs wr on wr.id = sa.workflow_run_id
+         where wr.idempotency_key = ? and sa.step_name = ?`,
+      )
+      .get(chave, passo) as { n: number };
+    return r.n;
   } finally {
     db.close();
   }
@@ -79,10 +103,10 @@ async function esperarFim(sorteioId: string, prazoMs = 15_000) {
 }
 
 /** Espera o run da chave terminar no OpenWorkflow. */
-async function esperarRun(chave: string, prazoMs = 10_000) {
+async function esperarRun(chave: string, prazoMs = 10_000, arquivo = OW_DB) {
   const t0 = Date.now();
   while (Date.now() - t0 < prazoMs) {
-    const r = runsDaChave(chave);
+    const r = runsDaChave(chave, arquivo);
     if (r.length && r.every((x) => x.status === "completed" || x.status === "failed")) return r;
     await dormir(100);
   }
@@ -162,6 +186,7 @@ describe("workflow sortear", () => {
   let G1: Grupo;
   let sorteio1: string;
   let pares1: string[];
+  let sorteio2: string;
 
   test("1. fluxo feliz: 4 participantes, rodada 1 conclui em até 15 s", async () => {
     G1 = await grupoCom(4);
@@ -215,7 +240,7 @@ describe("workflow sortear", () => {
 
   test("5. refazer: participante removido, rodada 2 apaga os pares antigos e grava 3 novos", async () => {
     await remover(G1.participantes[3]!);
-    const sorteio2 = await pedirSorteio(G1, 2);
+    sorteio2 = await pedirSorteio(G1, 2);
     const { s } = await esperarFim(sorteio2);
     expect(s.status).toBe("concluido");
     expect(s.pares).toHaveLength(3);
@@ -248,7 +273,8 @@ describe("workflow sortear", () => {
     const runs = await esperarRun(sorteioId);
     expect(runs).toHaveLength(1);
     expect(runs[0]!.status).toBe("completed");
-    expect(runs[0]!.attempts).toBe(1);
+    // Sem retry: o passo `sortear` rodou uma única vez.
+    expect(tentativasDoPasso(sorteioId, "sortear")).toBe(1);
 
     const g = await lerGrupo(G.grupoId);
     expect(g.status).toBe("aberto");
@@ -314,6 +340,53 @@ describe("workflow sortear", () => {
     expect(s.concluidoEm).toBeGreaterThan(1);
   });
 
+  test("run falho (Instant fora além do retry) ganha UM run novo na entrega seguinte", async () => {
+    campainha?.parar();
+    campainha = undefined;
+    const arquivo = join(DIR, `ow-teste-${PREFIXO}-falha.db`);
+    let falhar = true;
+    // Instant "fora do ar": toda consulta lança um erro comum (não ErroSorteio).
+    const dbInstavel = new Proxy(admin, {
+      get(t, k, r) {
+        if (k === "query" && falhar) return async () => { throw new Error("instant fora"); };
+        return Reflect.get(t, k, r);
+      },
+    });
+    const outro = await montar(arquivo, dbInstavel, { retryPasso: { maximumAttempts: 2, initialInterval: "50ms" } });
+    try {
+      const G = await grupoCom(3);
+      const sorteioId = await pedirSorteio(G, 1);
+
+      await dispararSorteio(outro.ow, sorteioId);
+      const [falho] = await esperarRun(sorteioId, 10_000, arquivo);
+      expect(falho!.status).toBe("failed");
+      expect((await lerSorteio(sorteioId))!.status).toBe("pendente");
+
+      // Instant volta; a próxima entrega abre exatamente um run de retry.
+      falhar = false;
+      await dispararSorteio(outro.ow, sorteioId);
+      const chaveRetry = `${sorteioId}:retry:${falho!.id}`;
+      expect(runsDaChave(chaveRetry, arquivo)).toHaveLength(1);
+      const { s } = await esperarFim(sorteioId);
+      expect(s.status).toBe("concluido");
+      expect(s.pares).toHaveLength(3);
+      await esperarRun(chaveRetry, 10_000, arquivo);
+
+      // Mais uma entrega não abre outro run.
+      await dispararSorteio(outro.ow, sorteioId);
+      await dispararSorteio(outro.ow, sorteioId);
+      expect(runsDaChave(sorteioId, arquivo)).toHaveLength(1);
+      expect(runsDaChave(chaveRetry, arquivo)).toHaveLength(1);
+      const db = new Database(arquivo, { readonly: true });
+      const total = db.query("select count(*) as n from workflow_runs").get() as { n: number };
+      db.close();
+      expect(total.n).toBe(2);
+    } finally {
+      await outro.parar();
+      for (const suf of ["", "-wal", "-shm"]) rmSync(arquivo + suf, { force: true });
+    }
+  });
+
   test("8. reexecutar gravar-pares: os mesmos 4 pares, sem duplicar", async () => {
     campainha?.parar(); // o worker não deve pegar este sorteio
     campainha = undefined;
@@ -332,5 +405,22 @@ describe("workflow sortear", () => {
     const s = await lerSorteio(sorteioId);
     expect(s!.status).toBe("concluido");
     expect(s!.pares).toHaveLength(4);
+  });
+
+  test("8b. reexecutar gravar-pares da rodada 2 (paresAntigos já apagados) é seguro", async () => {
+    // Carga equivalente à do teste 5: paresAntigos = os 4 pares da rodada 1, que já não existem.
+    const carga: Carga = {
+      grupoId: G1.grupoId,
+      rodada: 2,
+      participantes: G1.participantes.slice(0, 3).sort(),
+      restricoes: [],
+      paresAntigos: pares1,
+    };
+    const antes = (await paresDoGrupo(G1.grupoId)).map((p) => `${p.id}|${p.doador!.id}|${p.receptor!.id}`).sort();
+    expect(antes).toHaveLength(3);
+    expect(await gravarPares(admin, sorteio2, carga)).toBe(3);
+    const depois = (await paresDoGrupo(G1.grupoId)).map((p) => `${p.id}|${p.doador!.id}|${p.receptor!.id}`).sort();
+    expect(depois).toEqual(antes);
+    expect((await lerGrupo(G1.grupoId)).rodadaAtual).toBe(2);
   });
 });
