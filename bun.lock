@@ -31,7 +31,9 @@
     "worker": {
       "name": "@amigo/worker",
       "dependencies": {
+        "@amigo/dominio": "workspace:*",
         "@instantdb/admin": "1.0.67",
+        "openworkflow": "0.11.0",
       },
       "devDependencies": {
         "@types/bun": "1.4.5",
@@ -63,9 +65,15 @@
 
     "cookie": ["cookie@1.1.1", "", {}, "sha512-ei8Aos7ja0weRpFzJnEA9UHJ/7XQmqglbRwnf2ATjcB9Wq874VKH9kfjjirM6UhU2/E5fFYadylyhFldcqSidQ=="],
 
+    "cron-parser": ["cron-parser@5.10.1", "", { "dependencies": { "luxon": "^3.7.2" } }, "sha512-pKRrRagItwk9rGIStcUyMxFX34x56zoX3KDf9HJ4ttwkXIK1qxK63EvXvEDmlxI9AdPJ+Y7TEKRftRlW5eSS7A=="],
+
     "eventsource-parser": ["eventsource-parser@3.1.1", "", {}, "sha512-EKN1vKAMcZ8MlYMpaNuxN6R9yakzH6uajHcHVTqWJzvu5pWw9DyhbP35HH8MVBQ+dZjAfDxk+A8NiR9KWaXiyQ=="],
 
+    "luxon": ["luxon@3.7.2", "", {}, "sha512-vtEhXh/gNjI9Yg1u4jX/0YVPMvxzHuGgCm6tC5kZyb08yjGWGnqAjGJvcXbqQR2P3MyMEFnRbpcdFS6PBcLqew=="],
+
     "mutative": ["mutative@1.3.0", "", {}, "sha512-8MJj6URmOZAV70dpFe1YnSppRTKC4DsMkXQiBDFayLcDI4ljGokHxmpqaBQuDWa4iAxWaJJ1PS8vAmbntjjKmQ=="],
+
+    "openworkflow": ["openworkflow@0.11.0", "", { "dependencies": { "cron-parser": "5.10.1" }, "peerDependencies": { "@opentelemetry/api": "1", "postgres": "^3.4.9" }, "optionalPeers": ["@opentelemetry/api", "postgres"] }, "sha512-fdDfRjuNMLV+p3svZShrV5i/ZPbBS8GruWLlthk8Ezt3ueYPwVKk0mcD+knAmQ4J9RASBsY5JqiatiLtEcwgVw=="],
 
     "undici-types": ["undici-types@8.9.0", "", {}, "sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg=="],
 
