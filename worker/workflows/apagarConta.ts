@@ -11,7 +11,7 @@ import { log } from "../nucleo/log";
 import { RETRY_PASSO_PADRAO, type AdminDb } from "./sortear";
 
 export type EntradaConta = { pedidoId: string };
-export type SaidaConta = { ignorado: true } | { anonimizadas: number; apagadas: number; grupos: number };
+export type SaidaConta = { ignorado: true } | { anonimizadas: number; semRefazer: number; apagadas: number; grupos: number };
 
 export const specApagarConta = defineWorkflowSpec<EntradaConta, SaidaConta>({
   name: "apagar-conta",
@@ -98,7 +98,7 @@ export function definirApagarConta(ow: OpenWorkflow, db: AdminDb, opcoes: { retr
     const { usuarioId } = carga;
 
     const resumo = await step.run({ name: "limpar-dados", retryPolicy: RETRY_PASSO }, async () =>
-      usuarioId ? limparDados(db, usuarioId) : { anonimizadas: 0, apagadas: 0, grupos: 0 },
+      usuarioId ? limparDados(db, usuarioId) : { anonimizadas: 0, semRefazer: 0, apagadas: 0, grupos: 0 },
     );
 
     // Apagar o usuário ANTES de concluir: se este passo esgotar as tentativas, o pedido continua

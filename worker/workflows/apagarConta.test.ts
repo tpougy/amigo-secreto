@@ -194,7 +194,7 @@ describe("workflow apagar-conta", () => {
   });
 
   test("idempotente: limpar de novo não muda nada; o mesmo pedido não roda de novo", async () => {
-    expect(await limparDados(admin, X.id)).toEqual({ anonimizadas: 0, apagadas: 0, grupos: 0 });
+    expect(await limparDados(admin, X.id)).toEqual({ anonimizadas: 0, semRefazer: 0, apagadas: 0, grupos: 0 });
     const h = await ow.runWorkflow({ name: "apagar-conta", version: "1" } as never, { pedidoId: pedido }, {
       idempotencyKey: `${pedido}:outra`,
     });
