@@ -204,11 +204,17 @@ describe("workflow apagar-conta", () => {
     const W = await criarUsuario(PREFIXO);
     const g = await criarGrupoTeste(O);
     const pW = await entrar(W, g.grupoId, g.codigo);
+    const semCapa = await criarGrupoTeste(W); // grupo organizado sem capa: o delete da capa é no-op
     const [a, b] = [await pedirExclusao(W), await pedirExclusao(W)];
     await esperarConcluido(a!, W.id);
     await esperarConcluido(b!, W.id);
-    const r = await admin.query({ $users: { $: { where: { id: W.id } } }, participantes: { $: { where: { id: pW } } } });
+    const r = await admin.query({
+      $users: { $: { where: { id: W.id } } },
+      participantes: { $: { where: { id: pW } } },
+      grupos: { $: { where: { id: semCapa.grupoId } } },
+    });
     expect(r.$users).toEqual([]);
+    expect(r.grupos).toEqual([]);
     expect(r.participantes).toEqual([]);
   });
 });
