@@ -411,6 +411,26 @@ describe("sorteio com erro, chave e limites", () => {
   });
 });
 
+describe("entrada no grupo com sorteio em andamento", () => {
+  test("pendente/processando bloqueiam a entrada; depois do erro, entra", async () => {
+    const [O5, D1, D2, D3] = await Promise.all([1, 2, 3, 4].map(() => criarUsuario(PREFIXO)));
+    const G5 = await criarGrupoTeste(O5!, { organizadorParticipa: true });
+    await entrar(D1!, G5.grupoId, G5.codigo);
+    // Sem sorteio, entrar funciona (controle).
+    const s = await pedirSorteio(O5!, G5.grupoId, 1);
+    await esperarTipo(entrar(D2!, G5.grupoId, G5.codigo), "permission-denied");
+    await admin.transact(admin.tx.sorteios[s]!.update({ status: "processando" }));
+    await esperarTipo(entrar(D3!, G5.grupoId, G5.codigo), "permission-denied");
+    // Erro (chave liberada): a porta reabre.
+    await marcarErro(G5.grupoId, s, 1);
+    await entrar(D2!, G5.grupoId, G5.codigo);
+    const { participantes } = await admin.query({
+      participantes: { $: { where: { "grupo.id": G5.grupoId } } },
+    });
+    expect(participantes).toHaveLength(3);
+  });
+});
+
 /** Teste 11: os pares vistos pelo SDK cliente (`@instantdb/core`), não pelo admin. */
 async function paresComoCliente(u: Usuario) {
   return comoCliente(u, async (db) => (await db.queryOnce({ pares: { doador: {}, receptor: {} } })).data);

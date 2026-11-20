@@ -95,12 +95,16 @@ const rules = {
         "request.modifiedFields.all(f, f in ['apelido', 'perfilCompleto', 'viuParNaRodada', 'removido', 'removidoNaRodada']) && removidoSoTrue",
       soCamposDoOrganizador:
         "request.modifiedFields.all(f, f in ['removido', 'removidoNaRodada']) && removidoSoTrue",
+      // Ninguém entra enquanto um sorteio do grupo está pendente/processando (o worker também
+      // confere, em `gravar-pares`, que os participantes não mudaram desde o `carregar`).
+      semSorteioEmAndamento:
+        "!('pendente' in data.ref('grupo.sorteios.status')) && !('processando' in data.ref('grupo.sorteios.status'))",
     },
     allow: {
       view: "ehMembro || ehOrganizador",
       // rateLimit primeiro: toda tentativa (inclusive negada) gasta um token.
       create:
-        "rateLimit.entrada.limit(auth.id) && ehProprio && chaveCerta && grupoAberto && (codigoCerto || ehOrganizador)",
+        "rateLimit.entrada.limit(auth.id) && ehProprio && chaveCerta && grupoAberto && semSorteioEmAndamento && (codigoCerto || ehOrganizador)",
       update: "(ehProprio && soCamposDoProprio) || (ehOrganizador && soCamposDoOrganizador)",
       delete: "ehOrganizador || (ehProprio && grupoAberto)",
       link: {
