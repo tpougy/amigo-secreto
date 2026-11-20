@@ -30,6 +30,20 @@ export function emailDoIdToken(idToken: string | undefined): string | undefined 
   }
 }
 
+/**
+ * Completa a sessão com o e-mail verificado (id_token, senão userinfo). Sem e-mail verificado a
+ * sessão é recusada (`undefined` → 401 e o cliente refaz o login): uma sessão sem e-mail não
+ * identifica o usuário no Instant.
+ */
+export async function sessaoComEmail(
+  sessao: GoogleSession | undefined,
+  porUserinfo: (accessToken: string) => Promise<string | undefined>,
+): Promise<GoogleSession | undefined> {
+  if (!sessao) return undefined;
+  const email = emailDoIdToken(sessao.idToken) ?? (await porUserinfo(sessao.accessToken));
+  return email ? { ...sessao, email } : undefined;
+}
+
 export class GoogleComEmail extends GoogleProvider {
   // Cache curto do userinfo por access token (o fallback roda no máximo uma vez por token).
   private emails = new Map<string, string>();
@@ -53,10 +67,7 @@ export class GoogleComEmail extends GoogleProvider {
   }
 
   override async authenticate(request: IncomingMessage | undefined): Promise<GoogleSession | undefined> {
-    const sessao = await super.authenticate(request);
-    if (!sessao) return undefined;
-    const email = emailDoIdToken(sessao.idToken) ?? (await this.emailPorUserinfo(sessao.accessToken));
-    return email ? { ...sessao, email } : sessao;
+    return sessaoComEmail(await super.authenticate(request), (t) => this.emailPorUserinfo(t));
   }
 
   private async emailPorUserinfo(accessToken: string): Promise<string | undefined> {
