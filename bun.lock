@@ -22,6 +22,7 @@
       "dependencies": {
         "@amigo/dominio": "workspace:*",
         "@instantdb/admin": "1.0.67",
+        "@instantdb/core": "1.0.67",
       },
       "devDependencies": {
         "@types/bun": "1.4.5",

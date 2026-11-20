@@ -13,6 +13,10 @@ const rules = {
     entrada: {
       limits: [{ capacity: 20, refill: { amount: 20, period: "1 hour", type: "greedy" } }],
     },
+    // Pedidos de sorteio: 5 por hora por usuário (cobra também os negados).
+    sorteio: {
+      limits: [{ capacity: 5, refill: { amount: 5, period: "1 hour", type: "greedy" } }],
+    },
   },
 
   // Cliente não cria atributos novos (schemaless); só o admin/CLI mexe no schema.
@@ -42,12 +46,14 @@ const rules = {
         participantes: "true",
         campos: "true",
         restricoes: "true",
+        sorteios: "true",
       },
       unlink: {
         organizador: "false",
         participantes: "true",
         campos: "true",
         restricoes: "true",
+        sorteios: "true",
       },
     },
   },
@@ -97,11 +103,16 @@ const rules = {
       link: {
         grupo: "actions.data == 'create'",
         usuario: "actions.data == 'create' && auth.id == linkedData.id",
+        // Pares só são gravados pelo worker (admin).
+        doando: "false",
+        recebidoDe: "false",
       },
       unlink: {
         grupo: "false",
         usuario: "ehProprio || ehOrganizador",
         respostas: "false",
+        doando: "false",
+        recebidoDe: "false",
       },
     },
   },
@@ -151,9 +162,58 @@ const rules = {
     },
   },
 
-  // Regras de sorteios/pares/conta chegam na Task 6; até lá, nada para clientes.
-  sorteios: { allow: { view: "false", create: "false", update: "false", delete: "false" } },
-  pares: { allow: { view: "false", create: "false", update: "false", delete: "false" } },
+  sorteios: {
+    bind: {
+      ehOrganizador: "auth.id != null && auth.id in data.ref('grupo.organizador.id')",
+      ehMembro: "auth.id != null && auth.id in data.ref('grupo.participantes.usuario.id')",
+      // Rodada seguinte à atual, no máximo 3; a chave <grupoId>:<rodada> garante um pedido por rodada.
+      rodadaValida:
+        "data.rodada <= 3 && (data.rodada - 1) in data.ref('grupo.rodadaAtual')",
+      chaveCerta:
+        "size(data.ref('grupo.id')) == 1 && data.chave == data.ref('grupo.id')[0] + ':' + string(int(data.rodada))",
+      grupoNaoEncerrado: "!('encerrado' in data.ref('grupo.status'))",
+    },
+    allow: {
+      view: "ehMembro || ehOrganizador",
+      // rateLimit primeiro: todo pedido (inclusive negado) gasta um token.
+      create:
+        "rateLimit.sorteio.limit(auth.id) && ehOrganizador && data.status == 'pendente' && rodadaValida && chaveCerta && grupoNaoEncerrado",
+      // Status, erro, conclusão e pares: só o worker (admin).
+      update: "false",
+      // O servidor checa `delete` também nos filhos apagados em cascata: sem isso o
+      // organizador não consegue apagar o grupo depois do sorteio. Não lhe dá poder novo
+      // (ele já pode apagar o grupo inteiro) nem revela pares.
+      delete: "ehOrganizador",
+      link: {
+        grupo: "actions.data == 'create' && auth.id in linkedData.ref('organizador.id')",
+        pares: "false",
+      },
+      unlink: { grupo: "false", pares: "false" },
+    },
+  },
+
+  // Cada um vê só o próprio par (em que é o doador). Escrita só pelo worker (admin).
+  pares: {
+    allow: {
+      view: "auth.id != null && auth.id in data.ref('doador.usuario.id')",
+      create: "false",
+      update: "false",
+      // Só para a cascata de "organizador apaga o grupo" (ver sorteios.delete).
+      delete: "auth.id != null && auth.id in data.ref('sorteio.grupo.organizador.id')",
+      link: { sorteio: "false", doador: "false", receptor: "false" },
+      unlink: { sorteio: "false", doador: "false", receptor: "false" },
+    },
+  },
+
+  // Conta: o usuário vê só a própria. O servidor recusa regra de `delete` em `$users`
+  // ("doesn't support permissions for delete"): apagar a conta exige o admin
+  // (`auth.deleteUser`), ver discussion/ideias.md §10.
+  $users: {
+    allow: {
+      view: "auth.id == data.id",
+      delete: "false",
+    },
+  },
 } satisfies InstantRules<AppSchema>;
 
 export default rules;

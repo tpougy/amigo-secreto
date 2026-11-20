@@ -3,7 +3,7 @@
 // (`bun test testes/...`); o script `test` deste pacote passa `--env-file=../.env`.
 import { id, init } from "@instantdb/admin";
 import schema from "../instant.schema";
-import { camposIniciais, gerarCodigo } from "@amigo/dominio";
+import { camposIniciais, gerarCodigo, type Par } from "@amigo/dominio";
 
 function exigir(nome: string): string {
   const v = process.env[nome];
@@ -104,6 +104,35 @@ export async function entrar(usuario: Usuario, grupoId: string, codigo: string):
       .link({ grupo: grupoId, usuario: usuario.id }),
   );
   return participanteId;
+}
+
+/**
+ * Faz, como admin, o que o worker fará (Task 7) ao concluir um sorteio:
+ * apaga os pares anteriores do grupo (`pares.doador`/`receptor` são one-to-one, então cada
+ * participante só pode estar em um par por vez), grava os novos, marca o sorteio `concluido`
+ * e o grupo `sorteado` com `rodadaAtual` = rodada do sorteio.
+ * `pares` usa ids de participantes.
+ */
+export async function simularWorker(a: Admin, sorteioId: string, pares: Par[]): Promise<void> {
+  const { sorteios } = await a.query({
+    sorteios: { $: { where: { id: sorteioId } }, grupo: {} },
+  });
+  const sorteio = sorteios[0];
+  const grupoId = sorteio?.grupo?.id;
+  if (!sorteio || !grupoId) throw new Error("sorteio sem grupo");
+  const { pares: antigos } = await a.query({
+    pares: { $: { where: { "sorteio.grupo.id": grupoId } } },
+  });
+  if (antigos.length) await a.transact(antigos.map((p) => a.tx.pares[p.id]!.delete()));
+  await a.transact([
+    ...pares.map((p) =>
+      a.tx.pares[id()]!
+        .create({ chave: `${sorteioId}:${p.doador}` })
+        .link({ sorteio: sorteioId, doador: p.doador, receptor: p.receptor }),
+    ),
+    a.tx.grupos[grupoId]!.update({ status: "sorteado", rodadaAtual: sorteio.rodada }),
+    a.tx.sorteios[sorteioId]!.update({ status: "concluido", concluidoEm: Date.now() }),
+  ]);
 }
 
 /** Apaga (via admin) os grupos dos organizadores do prefixo e os usuários do prefixo. */
