@@ -28,11 +28,22 @@
         "@types/bun": "1.4.5",
       },
     },
+    "worker": {
+      "name": "@amigo/worker",
+      "dependencies": {
+        "@instantdb/admin": "1.0.67",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.5",
+      },
+    },
   },
   "packages": {
     "@amigo/dominio": ["@amigo/dominio@workspace:dominio"],
 
     "@amigo/testes": ["@amigo/testes@workspace:testes"],
+
+    "@amigo/worker": ["@amigo/worker@workspace:worker"],
 
     "@instantdb/admin": ["@instantdb/admin@1.0.67", "", { "dependencies": { "@instantdb/core": "1.0.67", "@instantdb/eventsource": "4.1.0-2", "@instantdb/version": "1.0.67", "@instantdb/webhooks": "1.0.67", "cookie": "^1.1.1", "uuid": "^11.1.0" } }, "sha512-ip5GgD2IhqM8XzqHn/ZJOm15nqyyKoKu+UlWq6fzUvCPhKJU5Yhpxsfrx79IchRQfwJHZL+ST8y+2AtE0m+wbg=="],
 

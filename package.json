@@ -4,6 +4,7 @@
   "packageManager": "bun@1.4.5",
   "workspaces": [
     "dominio",
+    "worker",
     "testes"
   ],
   "scripts": {
