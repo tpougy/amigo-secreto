@@ -8,7 +8,7 @@
 	import { db } from '#lib/instant.js';
 	import { usarSessao } from '#lib/sessao.svelte.js';
 	import { consultaGrupo, dataBr, emAndamento, paraDefCampos } from '#lib/grupo/consultas.js';
-	import { bannerRemovidoAposSorteio } from '#lib/grupo/regras.js';
+	import { bannerRemovidoAposSorteio, foraDoSorteio, LIMITE_RODADAS, textoBannerRemovido } from '#lib/grupo/regras.js';
 	import Participantes from '#lib/components/Participantes.svelte';
 	import PainelSorteio from '#lib/components/PainelSorteio.svelte';
 	import VoceTirou from '#lib/components/VoceTirou.svelte';
@@ -51,6 +51,17 @@
 	// Meu par da rodada atual (os pares antigos são apagados pelo worker ao refazer).
 	const meuPar = $derived(
 		grupo && eu?.doando?.receptor && eu.doando.sorteio?.rodada === grupo.rodadaAtual ? eu.doando : null
+	);
+	// Sorteado, sou participante ativo e não tenho par: entrei depois ou o sorteio rodou sem mim.
+	const semParNoSorteio = $derived(
+		!!grupo &&
+			foraDoSorteio({
+				status: grupo.status,
+				rodadaAtual: grupo.rodadaAtual,
+				souParticipanteAtivo: !!eu && !eu.removido,
+				temPar: !!meuPar,
+				andamento
+			})
 	);
 	const minhasRespostas = $derived(
 		(eu?.respostas ?? []).flatMap((r) => (r.campo ? [{ id: r.id, campoId: r.campo.id, valor: r.valor }] : []))
@@ -118,8 +129,10 @@
 		{#if banner}
 			<div class="flex flex-col gap-3 rounded-xl border-2 bg-amber-200 p-4 text-tinta shadow-md sm:flex-row sm:items-center" role="alert" data-testid="banner-removido">
 				<TriangleAlertIcon class="size-6 shrink-0" />
-				<p class="flex-1 font-bold">Um participante saiu depois do sorteio. Refaça o sorteio para incluir todos corretamente.</p>
-				<Button class="shrink-0 border-2 font-bold afunda" onclick={irParaRefazer}>Refazer sorteio</Button>
+				<p class="flex-1 font-bold">{textoBannerRemovido(grupo.rodadaAtual)}</p>
+				{#if grupo.rodadaAtual < LIMITE_RODADAS}
+					<Button class="shrink-0 border-2 font-bold afunda" onclick={irParaRefazer}>Refazer sorteio</Button>
+				{/if}
 			</div>
 		{/if}
 
@@ -146,6 +159,11 @@
 					{campos}
 				/>
 			{/key}
+		{:else if semParNoSorteio}
+			<div class="flex items-center gap-3 rounded-2xl border-2 bg-amber-200 p-4 text-tinta shadow-md" role="status" data-testid="fora-do-sorteio">
+				<TriangleAlertIcon class="size-6 shrink-0" />
+				<p class="font-bold">Você não está neste sorteio. Peça ao organizador para refazer.</p>
+			</div>
 		{:else if eu && !sorteado && !souOrganizador}
 			<div class="flex items-center gap-3 rounded-2xl border-2 bg-primary p-4 shadow-md" data-testid="aguardando">
 				<HourglassIcon class="size-7 shrink-0" />

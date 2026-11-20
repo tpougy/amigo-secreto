@@ -17,6 +17,7 @@
 	import { lookup } from '@instantdb/core';
 	import { db } from '#lib/instant.js';
 	import { usuarioDaChave } from '#lib/grupo/consultas.js';
+	import { textoRemocao } from '#lib/grupo/regras.js';
 	import ConfirmarAcao from '#lib/components/ConfirmarAcao.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import UserMinusIcon from '@lucide/svelte/icons/user-minus';
@@ -132,9 +133,7 @@
 <ConfirmarAcao
 	bind:aberto={confirmando}
 	titulo={alvo ? `Remover ${alvo.apelido}?` : 'Remover participante?'}
-	texto={depoisDoSorteio
-		? 'Remover depois do sorteio exige refazer o sorteio. As respostas do perfil dessa pessoa serão apagadas.'
-		: 'A pessoa sai do grupo e as respostas do perfil dela são apagadas.'}
+	texto={textoRemocao(rodadaAtual)}
 	rotuloConfirmar="Remover"
 	destrutivo
 	aoConfirmar={remover}

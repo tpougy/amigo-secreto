@@ -50,7 +50,15 @@ describe("planoApagarConta", () => {
   });
 
   test("resumoPlano conta cada tipo", () => {
-    expect(resumoPlano(planoApagarConta(dados))).toEqual({ anonimizadas: 2, apagadas: 1, grupos: 2 });
+    expect(resumoPlano(planoApagarConta(dados))).toEqual({ anonimizadas: 2, semRefazer: 0, apagadas: 1, grupos: 2 });
+  });
+
+  test("resumoPlano conta os grupos sorteados que já não podem refazer (rodada 3)", () => {
+    const d: DadosConta = {
+      ...dados,
+      participacoes: dados.participacoes.map((p) => (p.participanteId === "p-sorteado" ? { ...p, rodadaAtual: 3 } : p)),
+    };
+    expect(resumoPlano(planoApagarConta(d)).semRefazer).toBe(1);
   });
 });
 

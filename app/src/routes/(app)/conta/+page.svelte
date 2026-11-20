@@ -116,6 +116,12 @@
 						e o organizador é avisado para refazer o sorteio.
 					</li>
 				{/if}
+				{#if resumo.semRefazer}
+					<li>
+						{plural(resumo.semRefazer, 'grupo já fez', 'grupos já fizeram')} os 3 sorteios permitidos: lá não dá mais para
+						refazer, e quem tirou você fica sem amigo secreto.
+					</li>
+				{/if}
 			{/if}
 			<li>Não dá para desfazer.</li>
 		</ul>

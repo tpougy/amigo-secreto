@@ -64,3 +64,38 @@ export function bannerRemovidoAposSorteio(
   if (status !== "sorteado" || rodadaAtual < 1) return false;
   return participantes.some((p) => p.removido && p.removidoNaRodada === rodadaAtual);
 }
+
+/** Texto da confirmação de remoção pelo organizador (antes/depois do sorteio, e sem refazer). */
+export function textoRemocao(rodadaAtual: number): string {
+  if (rodadaAtual < 1) return "A pessoa sai do grupo e as respostas do perfil dela são apagadas.";
+  if (rodadaAtual >= LIMITE_RODADAS) {
+    return (
+      "O limite de 3 sorteios foi atingido: o sorteio não pode mais ser refeito. " +
+      "Quem tirou essa pessoa fica sem amigo secreto (a corrente se quebra). " +
+      "As respostas do perfil dela serão apagadas."
+    );
+  }
+  return "Remover depois do sorteio exige refazer o sorteio. As respostas do perfil dessa pessoa serão apagadas.";
+}
+
+/** Texto do banner "alguém saiu depois do sorteio" (sem convite a refazer quando não dá mais). */
+export function textoBannerRemovido(rodadaAtual: number): string {
+  if (rodadaAtual >= LIMITE_RODADAS) {
+    return "Um participante saiu depois do sorteio. O limite de 3 sorteios foi atingido: quem tirou essa pessoa ficou sem amigo secreto.";
+  }
+  return "Um participante saiu depois do sorteio. Refaça o sorteio para incluir todos corretamente.";
+}
+
+/**
+ * Grupo sorteado e eu (participante ativo) sem par na rodada atual: entrei, ou o sorteio rodou sem
+ * mim. Não vale durante um sorteio em andamento (o par está para mudar).
+ */
+export function foraDoSorteio(e: {
+  status: string;
+  rodadaAtual: number;
+  souParticipanteAtivo: boolean;
+  temPar: boolean;
+  andamento: boolean;
+}): boolean {
+  return e.status === "sorteado" && e.rodadaAtual >= 1 && e.souParticipanteAtivo && !e.temPar && !e.andamento;
+}

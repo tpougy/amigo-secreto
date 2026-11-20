@@ -4,8 +4,11 @@ import {
   confirmacaoRefazer,
   contarAtivos,
   contarViram,
+  foraDoSorteio,
   LIMITE_RODADAS,
   motivoNaoSortear,
+  textoBannerRemovido,
+  textoRemocao,
 } from "./regras";
 
 const p = (o: { removido?: boolean; viuParNaRodada?: number | null; removidoNaRodada?: number | null }) => ({
@@ -93,5 +96,44 @@ describe("bannerRemovidoAposSorteio", () => {
   test("grupo aberto ou encerrado: nunca", () => {
     expect(bannerRemovidoAposSorteio("aberto", 0, [p({ removido: true, removidoNaRodada: 0 })])).toBe(false);
     expect(bannerRemovidoAposSorteio("encerrado", 1, [p({ removido: true, removidoNaRodada: 1 })])).toBe(false);
+  });
+});
+
+describe("textoRemocao", () => {
+  test("antes do sorteio: sai do grupo", () => {
+    expect(textoRemocao(0)).toBe("A pessoa sai do grupo e as respostas do perfil dela são apagadas.");
+  });
+  test("rodadas 1 e 2: exige refazer", () => {
+    for (const r of [1, 2]) expect(textoRemocao(r)).toContain("exige refazer o sorteio");
+  });
+  test("rodada 3 (limite): não dá para refazer e a corrente se quebra", () => {
+    for (const r of [3, 4]) {
+      const t = textoRemocao(r);
+      expect(t).toContain("não pode mais ser refeito");
+      expect(t).toContain("Quem tirou essa pessoa fica sem amigo secreto");
+      expect(t).not.toContain("exige refazer");
+    }
+  });
+});
+
+describe("textoBannerRemovido", () => {
+  test("convida a refazer só abaixo do limite", () => {
+    expect(textoBannerRemovido(2)).toContain("Refaça o sorteio");
+    expect(textoBannerRemovido(3)).not.toContain("Refaça");
+    expect(textoBannerRemovido(3)).toContain("ficou sem amigo secreto");
+  });
+});
+
+describe("foraDoSorteio", () => {
+  const base = { status: "sorteado", rodadaAtual: 1, souParticipanteAtivo: true, temPar: false, andamento: false };
+  test("sorteado, ativo e sem par → fora", () => {
+    expect(foraDoSorteio(base)).toBe(true);
+  });
+  test("com par, removido, grupo aberto/encerrado ou sorteio em andamento → não", () => {
+    expect(foraDoSorteio({ ...base, temPar: true })).toBe(false);
+    expect(foraDoSorteio({ ...base, souParticipanteAtivo: false })).toBe(false);
+    expect(foraDoSorteio({ ...base, status: "aberto", rodadaAtual: 0 })).toBe(false);
+    expect(foraDoSorteio({ ...base, status: "encerrado" })).toBe(false);
+    expect(foraDoSorteio({ ...base, andamento: true })).toBe(false);
   });
 });

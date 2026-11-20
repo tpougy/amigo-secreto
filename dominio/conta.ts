@@ -63,9 +63,16 @@ export function planoApagarConta(d: DadosConta): OperacaoConta[] {
 }
 
 /** Contagens do plano (para a confirmação na tela e para o log do worker). */
-export function resumoPlano(ops: OperacaoConta[]): { anonimizadas: number; apagadas: number; grupos: number } {
+export function resumoPlano(ops: OperacaoConta[]): {
+  anonimizadas: number;
+  semRefazer: number;
+  apagadas: number;
+  grupos: number;
+} {
   return {
     anonimizadas: ops.filter((o) => o.tipo === "anonimizar").length,
+    // Grupos que já fizeram as 3 rodadas: não dá para refazer, quem tirou a pessoa fica sem par.
+    semRefazer: ops.filter((o) => o.tipo === "anonimizar" && o.rodada >= 3).length,
     apagadas: ops.filter((o) => o.tipo === "apagar-participacao").length,
     grupos: ops.filter((o) => o.tipo === "apagar-grupo").length,
   };
