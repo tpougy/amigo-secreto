@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
-# Provisiona na VPS os apps Dokku `amigo-worker` e `amigo-painel` e o volume `amigo-workflows`.
+# Provisiona na VPS os apps Dokku `amigo-worker` e `amigo-painel` (volume `amigo-workflows`) e
+# `amigo-mcp` (volume `amigo-mcp-data`, domínio amigo-mcp.app.tpou.gy com Let's Encrypt).
 # Idempotente: cada passo confere o estado antes de mudar; a última linha diz quantas mudanças houve.
 # Segredos (app_id/admin_token do Instant de produção) são lidos na própria VPS de
 # /root/instant-apps/amigo-secreto.env e nunca passam por esta máquina nem pela saída.
+# As chaves do MCP (MCP_ENCRYPTION_KEY/MCP_JWT_KEY) são geradas na VPS uma única vez: gerar de novo
+# invalidaria as sessões OAuth já emitidas. As credenciais do Google começam como `pendente` e só
+# são gravadas se ainda não existirem (o valor real, configurado depois, nunca é sobrescrito).
 set -euo pipefail
 
 HOST=vps-mercurio
@@ -11,7 +15,6 @@ ssh "$HOST" 'bash -s' <<'REMOTO'
 set -euo pipefail
 
 VOL=amigo-workflows
-VOL_DIR=/var/lib/dokku/data/storage/$VOL
 UID_BUN=1000:1000 # usuário `bun` da imagem oven/bun
 MUDANCAS=0
 
@@ -39,41 +42,53 @@ cfg() {
   fi
 }
 
-echo "== volume $VOL"
-if dokku storage:info "$VOL" >/dev/null 2>&1; then ok "storage $VOL"; else
-  dokku storage:create "$VOL" >/dev/null
-  mudou "storage:create $VOL"
-fi
-if [ "$(stat -c %u:%g "$VOL_DIR")" = "$UID_BUN" ]; then ok "dono $UID_BUN"; else
-  chown "$UID_BUN" "$VOL_DIR"
-  mudou "chown $UID_BUN $VOL_DIR"
-fi
+# volume <nome>: cria o storage do Dokku (dono = usuário `bun`).
+volume() {
+  local vol=$1 dir=/var/lib/dokku/data/storage/$1
+  echo "== volume $vol"
+  if dokku storage:info "$vol" >/dev/null 2>&1; then ok "storage $vol"; else
+    dokku storage:create "$vol" >/dev/null
+    mudou "storage:create $vol"
+  fi
+  if [ "$(stat -c %u:%g "$dir")" = "$UID_BUN" ]; then ok "dono $UID_BUN"; else
+    chown "$UID_BUN" "$dir"
+    mudou "chown $UID_BUN $dir"
+  fi
+}
 
-for APP in amigo-worker amigo-painel; do
-  DIR=${APP#amigo-}
-  echo "== $APP"
-  if dokku apps:exists "$APP" >/dev/null 2>&1; then ok "app"; else
-    dokku apps:create "$APP" >/dev/null
+# app_base <app> <dir> <volume>: app com build por Dockerfile (contexto = repositório inteiro)
+# em <dir>/Dockerfile e o volume montado em /data.
+app_base() {
+  local app=$1 dir=$2 vol=$3
+  if dokku apps:exists "$app" >/dev/null 2>&1; then ok "app"; else
+    dokku apps:create "$app" >/dev/null
     mudou "apps:create"
   fi
-  # Build com Dockerfile e contexto = repositório inteiro.
-  if [ "$(rep builder "$APP" builder-selected)" = dockerfile ]; then ok "builder dockerfile"; else
-    dokku builder:set "$APP" selected dockerfile >/dev/null
+  if [ "$(rep builder "$app" builder-selected)" = dockerfile ]; then ok "builder dockerfile"; else
+    dokku builder:set "$app" selected dockerfile >/dev/null
     mudou "builder:set selected dockerfile"
   fi
-  if [ "$(rep builder-dockerfile "$APP" builder-dockerfile-dockerfile-path)" = "$DIR/Dockerfile" ]; then
-    ok "dockerfile-path $DIR/Dockerfile"
+  if [ "$(rep builder-dockerfile "$app" builder-dockerfile-dockerfile-path)" = "$dir/Dockerfile" ]; then
+    ok "dockerfile-path $dir/Dockerfile"
   else
-    dokku builder-dockerfile:set "$APP" dockerfile-path "$DIR/Dockerfile" >/dev/null
-    mudou "dockerfile-path $DIR/Dockerfile"
+    dokku builder-dockerfile:set "$app" dockerfile-path "$dir/Dockerfile" >/dev/null
+    mudou "dockerfile-path $dir/Dockerfile"
   fi
+  if dokku storage:list "$app" 2>/dev/null | grep -q "/var/lib/dokku/data/storage/$vol:/data"; then
+    ok "volume $vol em /data"
+  else
+    dokku storage:mount "$app" "$vol" --container-dir /data >/dev/null
+    mudou "storage:mount $vol /data"
+  fi
+}
+
+volume "$VOL"
+for APP in amigo-worker amigo-painel; do
+  echo "== $APP"
+  app_base "$APP" "${APP#amigo-}" "$VOL"
   if [ "$(rep proxy "$APP" proxy-enabled)" = false ]; then ok "proxy desligado"; else
     dokku proxy:disable "$APP" >/dev/null
     mudou "proxy:disable"
-  fi
-  if dokku storage:list "$APP" 2>/dev/null | grep -q "$VOL_DIR:/data"; then ok "volume em /data"; else
-    dokku storage:mount "$APP" "$VOL" --container-dir /data >/dev/null
-    mudou "storage:mount $VOL /data"
   fi
 done
 
@@ -122,6 +137,50 @@ if [ "$(rep checks amigo-painel checks-disabled-list)" = _all_ ]; then ok "check
   mudou "checks:disable"
 fi
 cfg amigo-painel PORT=3999 DO_NOT_TRACK=1 OW_DB=/data/ow.db
+
+MCP=amigo-mcp
+MCP_DOMINIO=amigo-mcp.app.tpou.gy
+volume amigo-mcp-data
+echo "== $MCP (https://$MCP_DOMINIO, porta 8080 no container)"
+app_base "$MCP" mcp amigo-mcp-data
+if [ "$(rep ps "$MCP" ps-procfile-path)" = mcp/Procfile ]; then ok "procfile-path"; else
+  dokku ps:set "$MCP" procfile-path mcp/Procfile >/dev/null
+  mudou "ps:set procfile-path mcp/Procfile"
+fi
+if [ "$(rep domains "$MCP" domains-app-vhosts)" = "$MCP_DOMINIO" ]; then ok "domínio $MCP_DOMINIO"; else
+  dokku domains:set "$MCP" "$MCP_DOMINIO" >/dev/null
+  mudou "domains:set $MCP_DOMINIO"
+fi
+# O Dokku injeta PORT = porta do container no mapa (8080), que é onde o servidor ouve.
+MAPA=$(rep ports "$MCP" ports-map | tr ' ' '\n' | sort | xargs)
+if [ "$MAPA" = "http:80:8080 https:443:8080" ]; then ok "ports $MAPA"; else
+  dokku ports:set "$MCP" http:80:8080 https:443:8080 >/dev/null
+  mudou "ports:set http:80:8080 https:443:8080 (antes: ${MAPA:-vazio})"
+fi
+cfg "$MCP" INSTANT_API_URI=https://instant.tpou.gy DO_NOT_TRACK=1 MCP_TOKENS_DIR=/data/tokens
+app_id=$(grep -m1 '^app_id=' "$SEGREDOS" | cut -d= -f2-)
+admin_token=$(grep -m1 '^admin_token=' "$SEGREDOS" | cut -d= -f2-)
+[ -n "$app_id" ] && [ -n "$admin_token" ] || { echo "faltam app_id/admin_token em $SEGREDOS" >&2; exit 1; }
+cfg "$MCP" INSTANT_APP_ID="$app_id" INSTANT_ADMIN_TOKEN="$admin_token"
+unset app_id admin_token
+# Só cria o que falta; nunca regrava (chaves geradas uma vez; Google configurado depois à mão).
+for K in MCP_ENCRYPTION_KEY MCP_JWT_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET; do
+  if [ -n "$(dokku config:get "$MCP" "$K" 2>/dev/null || true)" ]; then ok "$K definido"; else
+    case $K in
+      MCP_*) dokku config:set --no-restart "$MCP" "$K=$(openssl rand -hex 32)" >/dev/null ;;
+      *) dokku config:set --no-restart "$MCP" "$K=pendente" >/dev/null ;;
+    esac
+    mudou "$MCP config:set $K (novo)"
+  fi
+done
+# Let's Encrypt precisa do app no ar (desafio HTTP pelo nginx): na 1ª vez, rodar de novo após o deploy.
+if [ "$(rep letsencrypt "$MCP" letsencrypt-active)" = true ]; then ok "letsencrypt ativo"; elif
+  [ "$(rep ps "$MCP" deployed)" = true ]; then
+  dokku letsencrypt:enable "$MCP" >/dev/null
+  mudou "letsencrypt:enable"
+else
+  echo "  pendente: letsencrypt:enable depois do 1º deploy (infra/deploy.sh $MCP; rode este script de novo)"
+fi
 
 echo "mudanças: $MUDANCAS"
 REMOTO
