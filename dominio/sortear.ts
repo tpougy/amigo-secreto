@@ -71,22 +71,42 @@ export function sortear(participantes: string[], restricoes: Restricao[], seed: 
     }
   }
 
-  // 2) Backtracking completo sobre permutações sem ponto fixo, candidatos em ordem semeada.
+  // 2) Atribuição geral. A cada passo, só aceitamos um receptor se o restante ainda admite
+  // emparelhamento perfeito (Kuhn, polinomial). Assim nunca há retrocesso exponencial:
+  // sem emparelhamento inicial é impossível; com ele, o primeiro candidato viável sempre completa.
   const candidatos = ids.map((d) => embaralhar(ids.filter((r) => ok(d, r)), rnd));
   const usado = new Set<string>();
-  const escolha: string[] = [];
-  const buscar = (i: number): boolean => {
-    if (i === n) return true;
-    for (const r of candidatos[i]!) {
-      if (usado.has(r)) continue;
-      usado.add(r);
-      escolha[i] = r;
-      if (buscar(i + 1)) return true;
-      usado.delete(r);
-    }
-    return false;
-  };
-  if (buscar(0)) return ids.map((d, i) => ({ doador: d, receptor: escolha[i]! }));
 
-  throw new ErroSorteio("restricoes-impossiveis", "As restrições tornam o sorteio impossível");
+  const viavel = (inicio: number): boolean => {
+    const dono = new Map<string, number>();
+    const tentar = (i: number, visto: Set<string>): boolean => {
+      for (const r of candidatos[i]!) {
+        if (usado.has(r) || visto.has(r)) continue;
+        visto.add(r);
+        const atual = dono.get(r);
+        if (atual === undefined || tentar(atual, visto)) {
+          dono.set(r, i);
+          return true;
+        }
+      }
+      return false;
+    };
+    for (let i = inicio; i < n; i++) if (!tentar(i, new Set())) return false;
+    return true;
+  };
+
+  if (!viavel(0)) throw new ErroSorteio("restricoes-impossiveis", "As restrições tornam o sorteio impossível");
+  const escolha: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const r = candidatos[i]!.find((c) => {
+      if (usado.has(c)) return false;
+      usado.add(c);
+      if (viavel(i + 1)) return true;
+      usado.delete(c);
+      return false;
+    });
+    if (r === undefined) throw new ErroSorteio("restricoes-impossiveis", "As restrições tornam o sorteio impossível");
+    escolha[i] = r;
+  }
+  return ids.map((d, i) => ({ doador: d, receptor: escolha[i]! }));
 }

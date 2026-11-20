@@ -91,13 +91,50 @@ describe("sortear", () => {
   });
 
   test("caso que exige backtracking (ciclo único impossível) ainda resolve", () => {
-    // a–b, c–d com 4: ciclos a→c→b→d→a e similares existem; força caminho geral com 3+restrições
+    // a só pode dar a d; nenhum ciclo único existe, então a atribuição geral resolve.
     const pares = sortear(
       ["a", "b", "c", "d"],
       [{ a: "a", b: "b" }, { a: "c", b: "d" }, { a: "a", b: "c" }],
       "s",
     );
     expect(pares.length).toBe(4);
+  });
+
+  test("Hall violado em 22 e 30 participantes lança rápido", () => {
+    for (const n of [22, 30]) {
+      const p = ids(n);
+      const restricoes: Restricao[] = [];
+      // p(n-2) e p(n-1) só podem dar a p00.
+      for (const d of [p[n - 2]!, p[n - 1]!]) {
+        for (let j = 1; j < n; j++) if (p[j] !== d) restricoes.push({ a: d, b: p[j]! });
+      }
+      const t0 = performance.now();
+      try {
+        sortear(p, restricoes, "s");
+        throw new Error("não lançou");
+      } catch (e) {
+        expect((e as ErroSorteio).codigo).toBe("restricoes-impossiveis");
+      }
+      expect(performance.now() - t0).toBeLessThan(500);
+    }
+  });
+
+  test("caso denso e viável (n=20, 5 restrições por pessoa) cumpre invariantes", () => {
+    const n = 20;
+    const p = ids(n);
+    const restricoes: Restricao[] = [];
+    for (let i = 0; i < n; i++) for (const k of [2, 3, 5, 7, 11]) restricoes.push({ a: p[i]!, b: p[(i + k) % n]! });
+    const proibido = new Set(restricoes.flatMap((r) => [`${r.a}|${r.b}`, `${r.b}|${r.a}`]));
+    for (let s = 0; s < 50; s++) {
+      const pares = sortear(p, restricoes, `d-${s}`);
+      expect(new Set(pares.map((x) => x.doador)).size).toBe(n);
+      expect(new Set(pares.map((x) => x.receptor)).size).toBe(n);
+      for (const x of pares) {
+        expect(x.doador).not.toBe(x.receptor);
+        expect(proibido.has(`${x.doador}|${x.receptor}`)).toBe(false);
+      }
+      expect(sortear([...p].reverse(), restricoes, `d-${s}`)).toEqual(pares);
+    }
   });
 
   test("seedDe é identidade", () => {
