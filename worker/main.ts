@@ -5,6 +5,7 @@ import { OpenWorkflow } from "openworkflow";
 import { BackendSqlite } from "openworkflow/sqlite";
 import schema from "../instant.schema";
 import { log } from "./nucleo/log";
+import { definirApagarConta, processarPedidosExclusao } from "./workflows/apagarConta";
 import { definirSorteio, processarPendentes } from "./workflows/sortear";
 
 /** Força uma reassinatura periódica: cobre conexões meio-abertas que nunca dão erro. */
@@ -30,16 +31,22 @@ const concorrencia = Number(process.env.OW_CONCORRENCIA ?? "2") || 2;
 const backend = BackendSqlite.connect(process.env.OW_DB ?? "/data/ow.db");
 const ow = new OpenWorkflow({ backend });
 definirSorteio(ow, db);
+definirApagarConta(ow, db);
 
 const worker = ow.newWorker({ concurrency: concorrencia });
 await worker.start();
 log("worker.iniciado", { concorrencia, pid: process.pid });
 
-let campainha = processarPendentes(ow, db);
+// Uma campainha por fila: sorteios pendentes e pedidos de exclusão de conta.
+const filas = [
+  { nome: "sorteios", abrir: () => processarPendentes(ow, db) },
+  { nome: "pedidosExclusao", abrir: () => processarPedidosExclusao(ow, db) },
+];
+let campainhas = filas.map((f) => f.abrir());
 const watchdog = setInterval(() => {
-  campainha.parar();
-  campainha = processarPendentes(ow, db);
-  log("campainha.renovada", { nome: "sorteios" });
+  for (const c of campainhas) c.parar();
+  campainhas = filas.map((f) => f.abrir());
+  for (const f of filas) log("campainha.renovada", { nome: f.nome });
 }, RENOVAR_CAMPAINHA_MS);
 
 let parando = false;
@@ -48,7 +55,7 @@ async function parar(sinal: string) {
   parando = true;
   log("worker.parando", { sinal });
   clearInterval(watchdog);
-  campainha.parar();
+  for (const c of campainhas) c.parar();
   await worker.stop();
   log("worker.parado", {});
   process.exit(0);

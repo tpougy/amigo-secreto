@@ -13,6 +13,7 @@ export function consultaGrupo(grupoId: string, usuarioId: string) {
     grupos: {
       $: { where: { id: grupoId } },
       organizador: {},
+      capa: {},
       campos: {},
       participantes: {},
       restricoes: { participanteA: {}, participanteB: {} },

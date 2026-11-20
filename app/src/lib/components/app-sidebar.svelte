@@ -5,8 +5,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import * as Avatar from '#lib/components/ui/avatar/index.js';
 	import SeloStatus from '#lib/components/selo-status.svelte';
-	import { db } from '#lib/instant.js';
-	import { usarSessao } from '#lib/sessao.svelte.js';
+	import { sairPara, usarSessao } from '#lib/sessao.svelte.js';
 	import type { GrupoResumo } from '#lib/meus-grupos.js';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TicketIcon from '@lucide/svelte/icons/ticket';
@@ -27,8 +26,7 @@
 	}
 
 	async function sair() {
-		await db.auth.signOut();
-		await goto('/', { replaceState: true });
+		await sairPara('/', goto);
 	}
 </script>
 

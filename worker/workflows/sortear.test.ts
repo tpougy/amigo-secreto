@@ -10,6 +10,7 @@ import { OpenWorkflow } from "openworkflow";
 import { BackendSqlite } from "openworkflow/sqlite";
 import {
   adminTeste,
+  adminTesteSemSchema,
   criarGrupoTeste,
   criarUsuario,
   entrar,
@@ -23,6 +24,7 @@ import {
   dispararSorteio,
   gravarPares,
   processarPendentes,
+  streamDoSorteio,
   type AdminDb,
   type Carga,
 } from "./sortear";
@@ -150,6 +152,27 @@ async function remover(participanteId: string) {
   await admin.transact(admin.tx.participantes[participanteId]!.update({ removido: true }));
 }
 
+/** Lê (como admin) o stream de progresso do sorteio até ele fechar; apaga o stream depois. */
+async function lerProgresso(sorteioId: string, prazoMs = 5000): Promise<string> {
+  const clientId = streamDoSorteio(sorteioId);
+  const leitor = admin.streams.createReadStream({ clientId }).getReader();
+  const prazo = setTimeout(() => void leitor.cancel().catch(() => {}), prazoMs);
+  let texto = "";
+  try {
+    for (;;) {
+      const { value, done } = await leitor.read();
+      if (done) break;
+      texto += value;
+    }
+  } finally {
+    clearTimeout(prazo);
+  }
+  const semSchema = adminTesteSemSchema();
+  const { $streams } = await semSchema.query({ $streams: { $: { where: { clientId } } } });
+  if ($streams.length) await semSchema.transact($streams.map((s) => semSchema.tx.$streams[s.id]!.delete()));
+  return texto;
+}
+
 async function lerGrupo(grupoId: string) {
   return (await admin.query({ grupos: { $: { where: { id: grupoId } } } })).grupos[0]!;
 }
@@ -180,6 +203,10 @@ afterAll(async () => {
   await amb?.parar();
   apagarOwDb();
   await limparTudo(PREFIXO);
+  // Streams de progresso dos sorteios deste arquivo (app de teste).
+  const semSchema = adminTesteSemSchema();
+  const { $streams } = await semSchema.query({ $streams: { $: { where: { clientId: { $like: "sorteio-%" } } } } });
+  if ($streams.length) await semSchema.transact($streams.map((s) => semSchema.tx.$streams[s.id]!.delete()));
 });
 
 describe("workflow sortear", () => {
@@ -213,6 +240,8 @@ describe("workflow sortear", () => {
       receptores.add(r.pares[0]!.receptor!.id);
     }
     expect(receptores.size).toBe(4);
+    // Progresso por stream: as três fases, na ordem.
+    expect(await lerProgresso(sorteio1)).toBe("embaralhando\nsorteando\npronto\n");
   });
 
   test("2. dois run com o mesmo sorteioId geram um único run", async () => {
@@ -275,6 +304,7 @@ describe("workflow sortear", () => {
     expect(runs[0]!.status).toBe("completed");
     // Sem retry: o passo `sortear` rodou uma única vez.
     expect(tentativasDoPasso(sorteioId, "sortear")).toBe(1);
+    expect(await lerProgresso(sorteioId)).toBe("embaralhando\nsorteando\nerro\n");
 
     const g = await lerGrupo(G.grupoId);
     expect(g.status).toBe("aberto");

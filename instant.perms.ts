@@ -47,6 +47,8 @@ const rules = {
         campos: "true",
         restricoes: "true",
         sorteios: "true",
+        // Capa: só o organizador liga/desliga; o lado do arquivo confere o path (ver $files).
+        capa: "ehOrganizador",
       },
       unlink: {
         organizador: "false",
@@ -54,6 +56,7 @@ const rules = {
         campos: "true",
         restricoes: "true",
         sorteios: "true",
+        capa: "ehOrganizador",
       },
     },
   },
@@ -144,6 +147,9 @@ const rules = {
   restricoes: {
     bind: {
       ehOrganizador: "auth.id != null && auth.id in data.ref('grupo.organizador.id')",
+      // Quem sai do grupo (delete do próprio participante) apaga em cascata as restrições que o citam.
+      citaOAutorComGrupoAberto:
+        "auth.id != null && 'aberto' in data.ref('grupo.status') && (auth.id in data.ref('participanteA.usuario.id') || auth.id in data.ref('participanteB.usuario.id'))",
       participantesDoGrupo:
         "size(data.ref('grupo.id')) == 1 && data.ref('grupo.id')[0] in data.ref('participanteA.grupo.id') && data.ref('grupo.id')[0] in data.ref('participanteB.grupo.id')",
     },
@@ -151,7 +157,11 @@ const rules = {
       view: "ehOrganizador",
       create: "ehOrganizador && participantesDoGrupo",
       update: "ehOrganizador",
-      delete: "ehOrganizador",
+      // O servidor checa `delete` nos filhos da cascata: sem este termo, sair do grupo (só com o
+      // grupo aberto) falharia para quem aparece numa restrição. Quem é citado não vê a
+      // restrição (view: só o organizador; o id não vaza pelos links), então na prática só a
+      // apaga junto com a própria participação.
+      delete: "ehOrganizador || citaOAutorComGrupoAberto",
       // Links só na criação; para mudar, apaga-se a restrição e cria-se outra.
       link: {
         grupo: "actions.data == 'create' && auth.id in linkedData.ref('organizador.id')",
@@ -205,6 +215,38 @@ const rules = {
     },
   },
 
+  // Capa do grupo: `grupos/<grupoId>/capa.jpg`. O id do grupo vem do path, conferido contra os
+  // grupos que o usuário organiza (`auth.ref`), porque no upload o arquivo ainda não tem link.
+  $files: {
+    bind: {
+      organizaPeloPath:
+        "auth.id != null && auth.ref('$user.gruposOrganizados.id').exists(g, data.path.startsWith('grupos/' + g + '/'))",
+      capaDoGrupoLigado:
+        "size(data.ref('grupoCapa.id')) == 1 && data.path.startsWith('grupos/' + data.ref('grupoCapa.id')[0] + '/')",
+      membroDoGrupoLigado:
+        "auth.id != null && (auth.id in data.ref('grupoCapa.participantes.usuario.id') || auth.id in data.ref('grupoCapa.organizador.id'))",
+    },
+    allow: {
+      view: "organizaPeloPath || (capaDoGrupoLigado && membroDoGrupoLigado)",
+      create: "organizaPeloPath",
+      update: "organizaPeloPath",
+      delete: "organizaPeloPath",
+    },
+  },
+
+  // Pedido de exclusão de conta: o próprio usuário cria (ligado ao próprio $users) e vê; o
+  // worker (admin) executa e marca `concluido`. Imutável para o cliente.
+  pedidosExclusao: {
+    allow: {
+      view: "auth.id != null && auth.id in data.ref('usuario.id')",
+      create: "auth.id != null && auth.id in data.ref('usuario.id') && data.status == 'pendente'",
+      update: "false",
+      delete: "false",
+      link: { usuario: "actions.data == 'create' && auth.id == linkedData.id" },
+      unlink: { usuario: "false" },
+    },
+  },
+
   // Conta: o usuário vê só a própria. O servidor recusa regra de `delete` em `$users`
   // ("doesn't support permissions for delete"): apagar a conta exige o admin
   // (`auth.deleteUser`), ver discussion/ideias.md §10.
@@ -216,4 +258,22 @@ const rules = {
   },
 } satisfies InstantRules<AppSchema>;
 
-export default rules;
+// `$streams` é entidade de sistema fora do schema do app, então fica fora do `satisfies`.
+const regrasStreams = {
+  // Progresso do sorteio (`sorteio-<sorteioId>`): só o worker (admin) escreve; lê quem é membro
+  // ou organizador do grupo do sorteio.
+  $streams: {
+    bind: {
+      sorteioDoStream: "data.clientId.startsWith('sorteio-') ? data.clientId.substring(8) : ''",
+    },
+    allow: {
+      view:
+        "auth.id != null && (sorteioDoStream in auth.ref('$user.participacoes.grupo.sorteios.id') || sorteioDoStream in auth.ref('$user.gruposOrganizados.sorteios.id'))",
+      create: "false",
+      update: "false",
+      delete: "false",
+    },
+  },
+};
+
+export default { ...rules, ...regrasStreams };

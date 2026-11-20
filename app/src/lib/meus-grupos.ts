@@ -7,6 +7,8 @@ export interface GrupoResumo {
   titulo: string;
   status: string;
   criadoEm?: string | number | Date;
+  /** Link `grupos.capa` ($files); ver `urlCapa`. */
+  capa?: unknown;
 }
 
 export interface ParticipacaoResumo {

@@ -6,7 +6,7 @@
 	import * as Sidebar from '#lib/components/ui/sidebar/index.js';
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import AppSidebar from '#lib/components/app-sidebar.svelte';
-	import { criarSessao } from '#lib/sessao.svelte.js';
+	import { criarSessao, saindoDeProposito } from '#lib/sessao.svelte.js';
 	import { guardarIntencao, intencaoDaRota } from '#lib/intencao.js';
 	import type { LayoutProps } from './$types';
 
@@ -15,7 +15,7 @@
 	const sessao = criarSessao();
 
 	$effect(() => {
-		if (sessao.carregandoAuth || sessao.usuario) return;
+		if (sessao.carregandoAuth || sessao.usuario || saindoDeProposito()) return;
 		const intencao = intencaoDaRota(page.url.pathname);
 		if (intencao) guardarIntencao(intencao);
 		goto('/entrar', { replaceState: true });

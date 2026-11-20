@@ -61,6 +61,11 @@ const _schema = i.schema({
     pares: i.entity({
       chave: i.string().unique(), // <sorteioId>:<doadorParticipanteId>
     }),
+    // Pedido de "apagar minha conta": o cliente cria, o worker (workflow `apagar-conta`) executa.
+    pedidosExclusao: i.entity({
+      criadoEm: i.date(),
+      status: i.string().indexed(), // pendente | concluido
+    }),
   },
   links: {
     grupoOrganizador: {
@@ -114,6 +119,10 @@ const _schema = i.schema({
     parReceptor: {
       forward: { on: "pares", has: "one", label: "receptor", onDelete: "cascade" },
       reverse: { on: "participantes", has: "one", label: "recebidoDe" },
+    },
+    pedidoExclusaoUsuario: {
+      forward: { on: "pedidosExclusao", has: "one", label: "usuario" },
+      reverse: { on: "$users", has: "many", label: "pedidosExclusao" },
     },
     grupoCapa: {
       forward: { on: "grupos", has: "one", label: "capa" },

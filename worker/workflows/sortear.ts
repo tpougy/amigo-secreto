@@ -7,7 +7,9 @@ import { defineWorkflowSpec, type OpenWorkflow, type RetryPolicy } from "openwor
 import { ErroSorteio, seedDe, sortear, type Restricao } from "@amigo/dominio";
 import type { AppSchema } from "../../instant.schema";
 import { assinaturaInstant, iniciarCampainha } from "../nucleo/campainha";
+import { dispararComRetomada } from "../nucleo/disparar";
 import { log } from "../nucleo/log";
+import { escreverFase } from "../nucleo/progresso";
 
 export type AdminDb = InstantAdminDatabase<AppSchema>;
 
@@ -29,7 +31,7 @@ export type Carga = {
  * são idempotentes, então insistir é seguro. Se mesmo assim o run falhar, `dispararSorteio`
  * abre um run novo na próxima entrega da campainha.
  */
-const RETRY_PASSO_PADRAO: Partial<RetryPolicy> = {
+export const RETRY_PASSO_PADRAO: Partial<RetryPolicy> = {
   maximumAttempts: 300,
   initialInterval: "1s",
   backoffCoefficient: 2,
@@ -49,6 +51,11 @@ export const specSortear = defineWorkflowSpec<Entrada, Saida>({
 
 export const MSG_RODADA_INVALIDA = "Rodada inválida";
 
+/** Stream de progresso do sorteio (lido pelo PainelSorteio; regra em `$streams`). */
+export const streamDoSorteio = (sorteioId: string) => `sorteio-${sorteioId}`;
+const fase = (db: AdminDb, sorteioId: string, f: "embaralhando" | "sorteando" | "pronto" | "erro") =>
+  escreverFase(db, streamDoSorteio(sorteioId), f, f === "pronto" || f === "erro");
+
 /** Marca o sorteio como `erro` e libera a chave `<grupoId>:<rodada>` (ruling do worker). */
 async function marcarErro(
   db: AdminDb,
@@ -66,6 +73,7 @@ async function marcarErro(
       concluidoEm: null,
     }),
   );
+  fase(db, sorteioId, "erro");
   log("sorteio.erro", { sorteioId, codigo });
 }
 
@@ -154,10 +162,12 @@ export function definirSorteio(ow: OpenWorkflow, db: AdminDb, opcoes: { retryPas
 
     await step.run({ name: "marcar-processando", retryPolicy: RETRY_PASSO }, async () => {
       await db.transact(db.tx.sorteios[sorteioId]!.update({ status: "processando" }));
+      fase(db, sorteioId, "embaralhando");
       return null;
     });
 
     const resultado = await step.run({ name: "sortear", retryPolicy: RETRY_PASSO }, async () => {
+      fase(db, sorteioId, "sorteando");
       try {
         return { pares: sortear(carga.participantes, carga.restricoes, seedDe(sorteioId)).length };
       } catch (e) {
@@ -171,6 +181,7 @@ export function definirSorteio(ow: OpenWorkflow, db: AdminDb, opcoes: { retryPas
 
     const pares = await step.run({ name: "gravar-pares", retryPolicy: RETRY_PASSO }, async () => {
       const n = await gravarPares(db, sorteioId, carga);
+      fase(db, sorteioId, "pronto");
       const inicio = run.startedAt ? new Date(run.startedAt).getTime() : Date.now();
       log("sorteio.concluido", { sorteioId, pares: n, duracaoMs: Date.now() - inicio });
       return n;
@@ -196,17 +207,7 @@ export function processarPendentes(ow: OpenWorkflow, db: AdminDb): { parar(): vo
   });
 }
 
-/**
- * Garante um run vivo (ou concluído) para o sorteio. A chave `sorteioId` dura 24 h e
- * devolveria para sempre um run `failed`; nesse caso abre UM run novo com a chave
- * `<sorteioId>:retry:<idDoRunFalho>`: determinística, então entregas repetidas da
- * campainha caem no mesmo run. Se esse também falhar, a próxima entrega encadeia outro.
- * (Não usar `rerunWorkflowRun`: sem chave, cada entrega criaria um rerun concorrente.)
- */
-export async function dispararSorteio(ow: OpenWorkflow, sorteioId: string): Promise<void> {
-  let h = await ow.runWorkflow(specSortear, { sorteioId }, { idempotencyKey: sorteioId });
-  while (h.workflowRun.status === "failed") {
-    const idempotencyKey = `${sorteioId}:retry:${h.workflowRun.id}`;
-    h = await ow.runWorkflow(specSortear, { sorteioId }, { idempotencyKey });
-  }
+/** Run do sorteio com retomada de run falho (ver `dispararComRetomada`). */
+export function dispararSorteio(ow: OpenWorkflow, sorteioId: string): Promise<void> {
+  return dispararComRetomada(ow, specSortear, { sorteioId }, sorteioId);
 }

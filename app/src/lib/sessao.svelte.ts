@@ -14,16 +14,36 @@ export interface Sessao {
 
 const CHAVE = Symbol("sessao");
 
+let saidaIntencional = false;
+
+/**
+ * Sai da conta e vai para `destino` sem o layout interno redirecionar para /entrar (ele faz
+ * isso quando a sessão cai sozinha). Usado por "Sair" e por "Apagar minha conta".
+ */
+export async function sairPara(destino: string, goto: (url: string, o?: { replaceState?: boolean }) => Promise<void>) {
+  saidaIntencional = true;
+  try {
+    await db.auth.signOut();
+    await goto(destino, { replaceState: true });
+  } finally {
+    saidaIntencional = false;
+  }
+}
+
+export function saindoDeProposito(): boolean {
+  return saidaIntencional;
+}
+
 export function criarSessao(): Sessao {
   const auth = db.useAuth();
   const consulta = db.useQuery(() => {
     const uid = auth.user?.id;
     if (!uid) return null;
     return {
-      grupos: { $: { where: { "organizador.id": uid } } },
+      grupos: { $: { where: { "organizador.id": uid } }, capa: {} },
       participantes: {
         $: { where: { "usuario.id": uid, removido: false } },
-        grupo: {},
+        grupo: { capa: {} },
       },
     };
   });

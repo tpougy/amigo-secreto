@@ -2,6 +2,7 @@
 // Credenciais vêm do .env da raiz: o Bun o carrega sozinho quando roda da raiz
 // (`bun test testes/...`); o script `test` deste pacote passa `--env-file=../.env`.
 import { id, init } from "@instantdb/admin";
+import { init as initCliente } from "@instantdb/core";
 import schema from "../instant.schema";
 import { camposIniciais, gerarCodigo, type Par } from "@amigo/dominio";
 
@@ -18,6 +19,25 @@ export function adminTeste() {
     apiURI: exigir("INSTANT_API_URI"),
     schema,
   });
+}
+
+/** Admin sem schema: para entidades de sistema fora do schema do app (ex.: `$streams`). */
+export function adminTesteSemSchema() {
+  return init({
+    appId: exigir("INSTANT_TEST_APP_ID"),
+    adminToken: exigir("INSTANT_TEST_ADMIN_TOKEN"),
+    apiURI: exigir("INSTANT_API_URI"),
+  });
+}
+
+/** Espera `cond` ficar verdadeira (o `transact` do core fora do navegador volta "enqueued"). */
+export async function esperarAte(cond: () => Promise<boolean>, prazoMs = 5000): Promise<void> {
+  const t0 = Date.now();
+  while (Date.now() - t0 < prazoMs) {
+    if (await cond()) return;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error(`condição não ficou verdadeira em ${prazoMs} ms`);
 }
 
 export type Admin = ReturnType<typeof adminTeste>;
@@ -164,4 +184,57 @@ export async function erroDe(p: Promise<unknown>): Promise<unknown> {
 export function tipoErro(e: unknown): string | undefined {
   const b = (e as { body?: { type?: string } })?.body;
   return b?.type;
+}
+
+export type Cliente = ReturnType<typeof initCliente<typeof schema>>;
+
+/**
+ * Roda `fn` com o SDK cliente (`@instantdb/core`), logado como o usuário: o mesmo caminho do
+ * navegador (regras, upload de arquivo, streams). O core só liga fora do navegador se achar um
+ * `window`; o storage é em memória e a rede é sempre "online". Tudo é desfeito ao final.
+ */
+export async function comoCliente<T>(u: Usuario, fn: (db: Cliente) => Promise<T>): Promise<T> {
+  const g = globalThis as Record<string, unknown>;
+  const tinhaWindow = "window" in g;
+  if (!tinhaWindow) g.window = globalThis;
+  class Memoria {
+    m = new Map<string, unknown>();
+    constructor(_appId: string, _dbName: string) {}
+    async getItem(k: string) {
+      return this.m.get(k) ?? null;
+    }
+    async setItem(k: string, v: unknown) {
+      this.m.set(k, v);
+    }
+    async getAllKeys() {
+      return [...this.m.keys()];
+    }
+    async multiSet(kv: [string, unknown][]) {
+      for (const [k, v] of kv) this.m.set(k, v);
+    }
+    async removeItem(k: string) {
+      this.m.delete(k);
+    }
+  }
+  const SempreOnline = { getIsOnline: async () => true, listen: () => () => {} };
+  const db = initCliente(
+    {
+      appId: exigir("INSTANT_TEST_APP_ID"),
+      apiURI: exigir("INSTANT_API_URI"),
+      websocketURI: "wss://instant.tpou.gy/runtime/session",
+      schema,
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    Memoria as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    SempreOnline as any,
+  );
+  try {
+    const token = await admin().auth.createToken({ email: u.email });
+    await db.auth.signInWithToken(token);
+    return await fn(db);
+  } finally {
+    db.shutdown();
+    if (!tinhaWindow) delete g.window;
+  }
 }

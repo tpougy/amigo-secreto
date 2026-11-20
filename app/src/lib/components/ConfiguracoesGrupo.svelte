@@ -1,7 +1,9 @@
 <script lang="ts">
-	// Aba Configurações do organizador: dados do grupo, campos do perfil, código/QR, encerrar e apagar.
+	// Aba Configurações do organizador: capa, dados do grupo, campos do perfil, código/QR, encerrar e apagar.
 	import { goto } from '$app/navigation';
-	import { id } from '@instantdb/core';
+	import { id, lookup } from '@instantdb/core';
+	import { caminhoCapa, comprimirCapa, ErroImagem, urlCapa } from '#lib/capa.js';
+	import Capa from '#lib/components/Capa.svelte';
 	import { db } from '#lib/instant.js';
 	import { mensagemDeErro } from '#lib/erros.js';
 	import { paraInputData, type CampoBruto } from '#lib/grupo/consultas.js';
@@ -24,6 +26,7 @@
 	import LoaderIcon from '@lucide/svelte/icons/loader-circle';
 	import ArchiveIcon from '@lucide/svelte/icons/archive';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
+	import ImageUpIcon from '@lucide/svelte/icons/image-up';
 
 	type Grupo = {
 		id: string;
@@ -34,9 +37,43 @@
 		dataSorteioPrevista?: string | number | null;
 		dataEvento?: string | number | null;
 		valorSugerido?: number | null;
+		capa?: unknown;
 	};
 
 	let { grupo, campos }: { grupo: Grupo; campos: CampoBruto[] } = $props();
+
+	// ---------- Capa ----------
+	const temCapa = $derived(!!urlCapa(grupo.capa));
+	let enviandoCapa = $state(false);
+	let erroCapa = $state<string | null>(null);
+	let entradaCapa = $state<HTMLInputElement | null>(null);
+
+	async function aoEscolherCapa(e: Event) {
+		const input = e.currentTarget as HTMLInputElement;
+		const arquivo = input.files?.[0];
+		input.value = '';
+		if (!arquivo) return;
+		enviandoCapa = true;
+		erroCapa = null;
+		try {
+			// Comprime no navegador: lado maior 1.600 px, JPEG 0,8 (mira 300–500 KB).
+			const jpeg = await comprimirCapa(arquivo);
+			const r = await db.storage.uploadFile(caminhoCapa(grupo.id), new File([jpeg], 'capa.jpg', { type: 'image/jpeg' }), {
+				contentType: 'image/jpeg'
+			});
+			await db.transact(db.tx.grupos[grupo.id]!.link({ capa: r.data.id }));
+			toast.success(`Capa salva (${Math.round(jpeg.size / 1024)} KB)`);
+		} catch (err) {
+			erroCapa = err instanceof ErroImagem ? err.message : mensagemDeErro(err);
+		} finally {
+			enviandoCapa = false;
+		}
+	}
+
+	async function removerCapa() {
+		await db.transact(db.tx.$files[lookup('path', caminhoCapa(grupo.id))]!.delete());
+		toast.success('Capa removida');
+	}
 
 	// ---------- Dados do grupo ----------
 	// svelte-ignore state_referenced_locally (o formulário começa com os valores salvos; "Desfazer" relê)
@@ -160,12 +197,44 @@
 		toast.success('Grupo encerrado');
 	}
 	async function apagar() {
-		await db.transact(db.tx.grupos[grupo.id]!.delete());
+		// A capa não cai em cascata com o grupo: vai na mesma transação.
+		await db.transact([
+			...(temCapa ? [db.tx.$files[lookup('path', caminhoCapa(grupo.id))]!.delete()] : []),
+			db.tx.grupos[grupo.id]!.delete()
+		]);
 		await goto('/grupos', { replaceState: true });
 	}
 </script>
 
 <div class="flex flex-col gap-6">
+	<section class="flex flex-col gap-4 rounded-xl border-2 bg-card p-4 shadow-md sm:p-5" data-testid="secao-capa">
+		<div>
+			<h3 class="text-lg font-black">Capa</h3>
+			<p class="text-sm text-muted-foreground">Aparece no topo do grupo e no cartão. Só quem participa vê.</p>
+		</div>
+		<Capa capa={grupo.capa} titulo={grupo.titulo} class="aspect-[3/1] rounded-lg" />
+		<input
+			bind:this={entradaCapa}
+			type="file"
+			accept="image/*"
+			class="hidden"
+			onchange={aoEscolherCapa}
+			data-testid="entrada-capa"
+		/>
+		{#if erroCapa}<p role="alert" class="text-sm font-bold text-destructive">{erroCapa}</p>{/if}
+		<div class="flex flex-wrap gap-2">
+			<Button class="border-2 font-bold afunda" disabled={enviandoCapa} onclick={() => entradaCapa?.click()}>
+				{#if enviandoCapa}<LoaderIcon class="animate-spin" />{:else}<ImageUpIcon />{/if}
+				{temCapa ? 'Trocar capa' : 'Enviar capa'}
+			</Button>
+			{#if temCapa}
+				<Button variant="outline" class="border-2 font-bold afunda" disabled={enviandoCapa} onclick={() => void removerCapa().catch((e) => (erroCapa = mensagemDeErro(e)))}>
+					Remover capa
+				</Button>
+			{/if}
+		</div>
+	</section>
+
 	<form onsubmit={salvarDados} class="flex flex-col gap-4 rounded-xl border-2 bg-card p-4 shadow-md sm:p-5" novalidate>
 		<h3 class="text-lg font-black">Dados do grupo</h3>
 		<div class="flex flex-col gap-1.5">

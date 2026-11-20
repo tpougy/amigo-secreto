@@ -2,6 +2,7 @@
 	// Página do grupo. Organizador: abas Participantes · Meu perfil · Sorteio · Configurações.
 	// Participante: informações, participantes, meu perfil e "aguardando sorteio"; depois do sorteio,
 	// "Você tirou" no topo (o organizador também participa, então também vê o próprio par).
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { TEMAS } from '@amigo/dominio';
 	import { db } from '#lib/instant.js';
@@ -13,6 +14,8 @@
 	import VoceTirou from '#lib/components/VoceTirou.svelte';
 	import ConfiguracoesGrupo from '#lib/components/ConfiguracoesGrupo.svelte';
 	import FormularioPerfil from '#lib/components/FormularioPerfil.svelte';
+	import Capa from '#lib/components/Capa.svelte';
+	import ConfirmarAcao from '#lib/components/ConfirmarAcao.svelte';
 	import SeloStatus from '#lib/components/selo-status.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
@@ -23,6 +26,7 @@
 	import HourglassIcon from '@lucide/svelte/icons/hourglass';
 	import LoaderIcon from '@lucide/svelte/icons/loader-circle';
 	import ArchiveIcon from '@lucide/svelte/icons/archive';
+	import LogOutIcon from '@lucide/svelte/icons/log-out';
 
 	const sessao = usarSessao();
 	const grupoId = $derived(page.params.id ?? '');
@@ -61,6 +65,17 @@
 		aba = 'sorteio';
 		refazerAberto = true;
 	}
+
+	// Sair do grupo: só antes do sorteio (a regra também exige o grupo aberto). Apaga a própria
+	// participação; respostas e restrições vão em cascata, e dá para voltar com o código.
+	const podeSair = $derived(!!grupo && grupo.status === 'aberto' && grupo.rodadaAtual === 0 && !andamento);
+	let sairAberto = $state(false);
+	async function sairDoGrupo() {
+		if (!eu) return;
+		await db.transact(db.tx.participantes[eu.id]!.delete());
+		toast.success('Você saiu do grupo');
+		await goto('/grupos', { replaceState: true });
+	}
 </script>
 
 <svelte:head><title>{grupo?.titulo ?? 'Grupo'} · Amigo Secreto</title></svelte:head>
@@ -83,6 +98,7 @@
 			</Card.Content>
 		</Card.Root>
 	{:else}
+		<Capa capa={grupo.capa} titulo={grupo.titulo} class="aspect-[3/1] rounded-2xl shadow-md" />
 		<header class="flex flex-col gap-2">
 			<div class="flex flex-wrap items-center gap-2">
 				<SeloStatus status={grupo.status} />
@@ -235,7 +251,26 @@
 						aoSalvar={() => toast.success('Perfil salvo')}
 					/>
 				{/key}
+				{#if !souOrganizador}
+					<div class="flex flex-col gap-2 border-t-2 border-dashed pt-4" data-testid="sair-grupo">
+						{#if podeSair}
+							<Button variant="outline" class="self-start border-2 font-bold afunda" onclick={() => (sairAberto = true)}>
+								<LogOutIcon /> Sair do grupo
+							</Button>
+						{:else if sorteado}
+							<p class="text-sm font-semibold text-muted-foreground">Para sair depois do sorteio, peça ao organizador</p>
+						{/if}
+					</div>
+				{/if}
 			</Card.Content>
 		</Card.Root>
+		<ConfirmarAcao
+			bind:aberto={sairAberto}
+			titulo="Sair do grupo?"
+			texto="Sua participação e as respostas do seu perfil neste grupo serão apagadas. Para voltar, basta usar o código de novo."
+			rotuloConfirmar="Sair do grupo"
+			destrutivo
+			aoConfirmar={sairDoGrupo}
+		/>
 	{/if}
 {/snippet}

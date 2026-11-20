@@ -2,10 +2,9 @@
 // Roda contra o app de TESTE (amigo-secreto-teste). Ver instant.perms.ts.
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { id } from "@instantdb/admin";
-import { init as initCliente } from "@instantdb/core";
-import schema from "../instant.schema";
 import {
   adminTeste,
+  comoCliente,
   criarGrupoTeste,
   criarUsuario,
   entrar,
@@ -361,54 +360,7 @@ describe("sorteio com erro, chave e limites", () => {
   });
 });
 
-/**
- * Faz a consulta de (1) pelo SDK cliente (`@instantdb/core`), logado como o usuário.
- * O core só liga fora do navegador se achar um `window`; o storage é em memória e
- * a rede é sempre "online". Tudo é desfeito ao final.
- */
+/** Teste 11: os pares vistos pelo SDK cliente (`@instantdb/core`), não pelo admin. */
 async function paresComoCliente(u: Usuario) {
-  const g = globalThis as Record<string, unknown>;
-  const tinhaWindow = "window" in g;
-  if (!tinhaWindow) g.window = globalThis;
-  class Memoria {
-    m = new Map<string, unknown>();
-    constructor(_appId: string, _dbName: string) {}
-    async getItem(k: string) {
-      return this.m.get(k) ?? null;
-    }
-    async setItem(k: string, v: unknown) {
-      this.m.set(k, v);
-    }
-    async getAllKeys() {
-      return [...this.m.keys()];
-    }
-    async multiSet(kv: [string, unknown][]) {
-      for (const [k, v] of kv) this.m.set(k, v);
-    }
-    async removeItem(k: string) {
-      this.m.delete(k);
-    }
-  }
-  const SempreOnline = { getIsOnline: async () => true, listen: () => () => {} };
-  const db = initCliente(
-    {
-      appId: process.env.INSTANT_TEST_APP_ID!,
-      apiURI: process.env.INSTANT_API_URI!,
-      websocketURI: "wss://instant.tpou.gy/runtime/session",
-      schema,
-    },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    Memoria as any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    SempreOnline as any,
-  );
-  try {
-    const token = await admin.auth.createToken({ email: u.email });
-    await db.auth.signInWithToken(token);
-    const r = await db.queryOnce({ pares: { doador: {}, receptor: {} } });
-    return r.data;
-  } finally {
-    db.shutdown();
-    if (!tinhaWindow) delete g.window;
-  }
+  return comoCliente(u, async (db) => (await db.queryOnce({ pares: { doador: {}, receptor: {} } })).data);
 }

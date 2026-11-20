@@ -1,5 +1,6 @@
 <script lang="ts">
 	import SeloStatus from '#lib/components/selo-status.svelte';
+	import Capa from '#lib/components/Capa.svelte';
 	import type { GrupoResumo } from '#lib/meus-grupos.js';
 	import ArrowRightIcon from '@lucide/svelte/icons/arrow-right';
 
@@ -10,6 +11,7 @@
 	href={`/grupos/${grupo.id}`}
 	class="group flex flex-col gap-3 rounded-xl border-2 bg-card p-4 shadow-md transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-lg afunda"
 >
+	<Capa capa={grupo.capa} titulo={grupo.titulo} class="-mx-4 -mt-4 aspect-[3/1] w-[calc(100%+2rem)] max-w-none rounded-t-[10px] border-x-0 border-t-0" />
 	<div class="flex items-start justify-between gap-2">
 		<h3 class="min-w-0 text-lg leading-tight font-black break-words">{grupo.titulo}</h3>
 		<SeloStatus status={grupo.status} />

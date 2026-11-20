@@ -1,6 +1,7 @@
 <script lang="ts">
 	// Aba Sorteio do organizador: contagem, data prevista, botão Sortear, status ao vivo do pedido
-	// (pendente → processando → concluído/erro), "Tentar de novo", refazer e restrições.
+	// (pendente → processando → concluído/erro) com a fase do worker por Instant Stream, "Tentar de
+	// novo", refazer e restrições.
 	// Nunca mostra pares: o organizador só enxerga o próprio (regra `pares.view`).
 	import { id } from '@instantdb/core';
 	import { db } from '#lib/instant.js';
@@ -111,6 +112,47 @@
 		}
 	}
 
+	// Fase do worker pelo stream `sorteio-<id>` (embaralhando → sorteando → pronto | erro). É só um
+	// detalhe a mais: sem stream (ou se ele falhar), a fase sai do `status` do sorteio.
+	const idEmAndamento = $derived(estado.tipo === 'andamento' ? estado.sorteio.id : null);
+	let faseStream = $state<string | null>(null);
+	$effect(() => {
+		const sorteioId = idEmAndamento;
+		faseStream = null;
+		if (!sorteioId) return;
+		let ativo = true;
+		let leitor: ReadableStreamDefaultReader<string> | null = null;
+		(async () => {
+			// O stream só existe quando o worker começa: se a leitura falhar, tenta mais algumas vezes.
+			for (let tentativa = 0; ativo && tentativa < 5; tentativa++) {
+				try {
+					leitor = db.streams.createReadStream({ clientId: `sorteio-${sorteioId}` }).getReader();
+					let texto = '';
+					for (;;) {
+						const { value, done } = await leitor.read();
+						if (done || !ativo) return;
+						texto += value;
+						const linhas = texto.split('\n').filter(Boolean);
+						if (linhas.length) faseStream = linhas[linhas.length - 1]!;
+					}
+				} catch {
+					await new Promise((r) => setTimeout(r, 400));
+				}
+			}
+		})();
+		return () => {
+			ativo = false;
+			leitor?.cancel().catch(() => {});
+		};
+	});
+	const nomeFase: Record<string, string> = {
+		embaralhando: 'Embaralhando os nomes...',
+		sorteando: 'Sorteando os pares...',
+		pronto: 'Pronto!',
+		erro: 'Algo deu errado.'
+	};
+	const fasePorStatus: Record<string, string> = { pendente: 'Na fila do servidor...', processando: 'Sorteando...' };
+
 	const passos = ['pendente', 'processando', 'concluido'] as const;
 	const nomePasso: Record<string, string> = { pendente: 'Na fila', processando: 'Sorteando', concluido: 'Pronto' };
 </script>
@@ -153,6 +195,9 @@
 					</li>
 				{/each}
 			</ol>
+			<p class="font-bold" data-testid="fase-sorteio" data-fonte={faseStream ? 'stream' : 'status'}>
+				{(faseStream && nomeFase[faseStream]) ?? fasePorStatus[atual] ?? ''}
+			</p>
 			<p class="text-sm text-muted-foreground">Pode fechar a página: o sorteio continua no servidor.</p>
 		{:else}
 			{#if estado.tipo === 'concluido' || (estado.tipo === 'erro' && estado.concluido)}
@@ -182,11 +227,28 @@
 						</p>
 						{#if encerrado}
 							<p class="text-sm">O grupo está encerrado.</p>
+						{:else if temRodada && grupo.rodadaAtual >= 1}
+							<!-- Refazer que falhou: tentar de novo é refazer, com a mesma confirmação. -->
+							<Button
+								class="self-start border-2 font-bold afunda"
+								disabled={!conf.permitido}
+								onclick={abrirRefazer}
+								data-testid="tentar-de-novo"
+							>
+								<RotateCcwIcon /> Tentar de novo
+							</Button>
+							{#if !conf.permitido}<p class="text-sm font-bold" data-testid="motivo-tentar">{conf.motivo}</p>{/if}
 						{:else if temRodada}
-							<Button class="self-start border-2 font-bold afunda" disabled={pedindo} onclick={sortear}>
+							<Button
+								class="self-start border-2 font-bold afunda"
+								disabled={!!motivoSortear || pedindo}
+								onclick={sortear}
+								data-testid="tentar-de-novo"
+							>
 								{#if pedindo}<LoaderIcon class="animate-spin" />{:else}<RotateCcwIcon />{/if}
 								Tentar de novo
 							</Button>
+							{#if motivoSortear}<p class="text-sm font-bold" data-testid="motivo-tentar">{motivoSortear}</p>{/if}
 						{:else}
 							<p class="text-sm font-bold">Limite de rodadas atingido</p>
 						{/if}
