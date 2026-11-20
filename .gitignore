@@ -1,0 +1,6 @@
+node_modules
+.env
+*.db*
+app/build
+app/.svelte-kit
+dados/
