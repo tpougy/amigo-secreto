@@ -79,7 +79,14 @@ describe("paraTransacao", () => {
     expect(campos.map((c) => c.dados.ordem)).toEqual([0, 1, 2, 3]);
     expect(campos.every((c) => c.links.grupo === "g1")).toBe(true);
     const g = ops[0]!;
-    expect(g.dados).toMatchObject({ status: "aberto", rodadaAtual: 0, codigo: "KQ7M4P", valorSugerido: 50, tema: "livro" });
+    expect(g.dados).toMatchObject({
+      status: "aberto",
+      rodadaAtual: 0,
+      codigo: "KQ7M4P",
+      valorSugerido: 50,
+      tema: "livro",
+      organizadorApelido: "fulano",
+    });
     expect(g.links).toEqual({ organizador: "u1" });
     expect(g.dados.dataEvento).toBeUndefined();
     const p = ops.at(-1)!;

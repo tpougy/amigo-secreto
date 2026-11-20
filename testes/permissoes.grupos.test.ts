@@ -421,6 +421,60 @@ describe("participantes: alteração e remoção", () => {
     expect(r.participantes[0]!.usuario).toBeUndefined();
   });
 
+  test("remoção pela UI: removido + removidoNaRodada + unlink + respostas por lookup de chave", async () => {
+    // O organizador não vê as respostas do membro (nem o e-mail dele): o id do usuário vem da chave
+    // do participante e as respostas são apagadas por lookup de `chave` (inclusive as que não existem).
+    const { lookup } = await import("@instantdb/admin");
+    const u = await criarUsuario(PREFIXO);
+    const pid = await entrar(u, G.grupoId, G.codigo);
+    const { campos } = await admin.query({ campos: { $: { where: { "grupo.id": G.grupoId } } } });
+    const [c1, c2] = campos.map((c) => c.id);
+    await u.db.transact(
+      u.db.tx.respostas[id()]!.create({ valor: "x", chave: `${pid}:${c1}` }).link({ participante: pid, campo: c1! }),
+    );
+    const vis = await org.db.query({ participantes: { $: { where: { id: pid } }, respostas: {} } });
+    expect(vis.participantes[0]!.respostas).toEqual([]);
+    const uid = vis.participantes[0]!.chave.split(":")[1]!;
+    expect(uid).toBe(u.id);
+    await org.db.transact([
+      org.db.tx.participantes[pid]!.update({ removido: true, removidoNaRodada: 1 }).unlink({ usuario: uid }),
+      org.db.tx.respostas[lookup("chave", `${pid}:${c1}`)]!.delete(),
+      org.db.tx.respostas[lookup("chave", `${pid}:${c2}`)]!.delete(),
+    ]);
+    const r = await admin.query({ participantes: { $: { where: { id: pid } }, usuario: {}, respostas: {} } });
+    expect(r.participantes[0]!.removido).toBe(true);
+    expect(r.participantes[0]!.removidoNaRodada).toBe(1);
+    expect(r.participantes[0]!.usuario).toBeUndefined();
+    expect(r.participantes[0]!.respostas).toEqual([]);
+    // Membro comum não marca removidoNaRodada em outro.
+    await esperarTipo(
+      a.db.transact(a.db.tx.participantes[pB]!.update({ removidoNaRodada: 1 })),
+      "permission-denied",
+    );
+  });
+
+  test("organizadorApelido: o organizador grava na criação e edita depois", async () => {
+    const gid = id();
+    await org.db.transact(
+      org.db.tx.grupos[gid]!.create({
+        titulo: `Grupo de ${org.email}`,
+        tema: "livro",
+        codigo: gerarCodigo(),
+        status: "aberto",
+        rodadaAtual: 0,
+        criadoEm: Date.now(),
+        organizadorApelido: "Org",
+      }).link({ organizador: org.id }),
+    );
+    await org.db.transact(org.db.tx.grupos[gid]!.update({ organizadorApelido: "Organizadora" }));
+    await esperarTipo(
+      a.db.transact(a.db.tx.grupos[gid]!.update({ organizadorApelido: "hack" })),
+      "permission-denied",
+    );
+    const r = await admin.query({ grupos: { $: { where: { id: gid } } } });
+    expect(r.grupos[0]!.organizadorApelido).toBe("Organizadora");
+  });
+
   test("o próprio não desfaz removido (true -> false)", async () => {
     const u = await criarUsuario(PREFIXO);
     const pid = await entrar(u, G.grupoId, G.codigo);

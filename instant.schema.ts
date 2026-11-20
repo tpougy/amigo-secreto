@@ -22,6 +22,8 @@ const _schema = i.schema({
       status: i.string().indexed(), // aberto | sorteado | encerrado
       rodadaAtual: i.number(), // começa em 0
       criadoEm: i.date(),
+      // Apelido do organizador, gravado na criação: a prévia e a página mostram "Organizado por".
+      organizadorApelido: i.string().optional(),
     }),
     campos: i.entity({
       rotulo: i.string(),
@@ -36,6 +38,8 @@ const _schema = i.schema({
       perfilCompleto: i.boolean(),
       removido: i.boolean(),
       viuParNaRodada: i.number().optional(),
+      // Rodada em que o participante foi removido (só se removido depois de um sorteio).
+      removidoNaRodada: i.number().optional(),
       entrouEm: i.date(),
       chave: i.string().unique(), // <grupoId>:<userId>
     }),

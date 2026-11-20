@@ -89,9 +89,9 @@ const rules = {
       // `removido` só vai de false para true (remoção é definitiva, nos dois caminhos).
       removidoSoTrue: "!('removido' in request.modifiedFields) || newData.removido == true",
       soCamposDoProprio:
-        "request.modifiedFields.all(f, f in ['apelido', 'perfilCompleto', 'viuParNaRodada', 'removido']) && removidoSoTrue",
+        "request.modifiedFields.all(f, f in ['apelido', 'perfilCompleto', 'viuParNaRodada', 'removido', 'removidoNaRodada']) && removidoSoTrue",
       soCamposDoOrganizador:
-        "request.modifiedFields.all(f, f in ['removido']) && removidoSoTrue",
+        "request.modifiedFields.all(f, f in ['removido', 'removidoNaRodada']) && removidoSoTrue",
     },
     allow: {
       view: "ehMembro || ehOrganizador",

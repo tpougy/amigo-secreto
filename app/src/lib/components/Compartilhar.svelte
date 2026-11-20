@@ -8,7 +8,18 @@
 	import Share2Icon from '@lucide/svelte/icons/share-2';
 	import ArrowRightIcon from '@lucide/svelte/icons/arrow-right';
 
-	let { codigo, grupoId, titulo }: { codigo: string; grupoId: string; titulo: string } = $props();
+	let {
+		codigo,
+		grupoId,
+		titulo,
+		naPaginaDoGrupo = false
+	}: {
+		codigo: string;
+		grupoId: string;
+		titulo: string;
+		/** Nas configurações do grupo: sem "Grupo criado!" e sem o botão "Ir para o grupo". */
+		naPaginaDoGrupo?: boolean;
+	} = $props();
 
 	const link = $derived(`${window.location.origin}/g/${codigo}`);
 	let svg = $state('');
@@ -55,7 +66,9 @@
 
 <div class="flex flex-col items-center gap-5 text-center">
 	<div>
-		<p class="text-sm font-bold text-muted-foreground">Grupo criado! Convide a turma com o código:</p>
+		<p class="text-sm font-bold text-muted-foreground">
+			{naPaginaDoGrupo ? 'Convide a turma com o código:' : 'Grupo criado! Convide a turma com o código:'}
+		</p>
 		<p
 			data-testid="codigo"
 			class="mt-2 inline-block rounded-xl border-2 bg-primary px-5 py-2 font-mono text-5xl font-black tracking-widest shadow-md sm:text-6xl"
@@ -87,9 +100,11 @@
 				<Share2Icon /> Compartilhar
 			</Button>
 		{/if}
-		<Button href={`/grupos/${grupoId}`} class="font-bold afunda">
-			Ir para o grupo <ArrowRightIcon />
-		</Button>
+		{#if !naPaginaDoGrupo}
+			<Button href={`/grupos/${grupoId}`} class="font-bold afunda">
+				Ir para o grupo <ArrowRightIcon />
+			</Button>
+		{/if}
 	</div>
 
 	{#if erro}

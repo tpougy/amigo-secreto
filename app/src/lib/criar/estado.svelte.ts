@@ -153,7 +153,7 @@ export function apelidoDoEmail(email: string | null | undefined): string {
   return (parte || "Organizador").slice(0, 40);
 }
 
-function dataIso(d: string): string {
+export function dataIso(d: string): string {
   return new Date(`${d}T12:00:00`).toISOString();
 }
 
@@ -175,6 +175,7 @@ export function paraTransacao(estado: Estado, ids: Ids): Operacao[] {
       status: "aberto",
       rodadaAtual: 0,
       criadoEm: ids.agora,
+      organizadorApelido: ids.apelido,
     },
     links: { organizador: ids.usuarioId },
   };

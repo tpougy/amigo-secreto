@@ -136,7 +136,11 @@
 					<span class="rounded-sm border-2 bg-ceu px-1.5 text-xs font-bold text-tinta">{tema}</span>
 				</div>
 				{#if grupo.descricao}<p class="whitespace-pre-line">{grupo.descricao}</p>{/if}
+				<!-- Sem contagem de participantes: não-membros não enxergam a lista (privacidade). -->
 				<dl class="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+					{#if grupo.organizadorApelido}
+						<div><dt class="font-bold">Organizado por</dt><dd data-testid="previa-organizador">{grupo.organizadorApelido}</dd></div>
+					{/if}
 					{#if grupo.dataSorteioPrevista}
 						<div><dt class="font-bold">Sorteio previsto</dt><dd>{dataBr(grupo.dataSorteioPrevista)}</dd></div>
 					{/if}
