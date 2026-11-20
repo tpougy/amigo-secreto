@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Abre o painel do OpenWorkflow (amigo-painel, 127.0.0.1:3999 na VPS) por túnel SSH.
+# Ctrl+C encerra o túnel. PAINEL_SEM_NAVEGADOR=1 só imprime a URL.
+set -euo pipefail
+
+PORTA=3999
+URL="http://localhost:$PORTA"
+
+ssh -N -o ExitOnForwardFailure=yes -L "$PORTA:127.0.0.1:$PORTA" vps-mercurio &
+PID=$!
+trap 'kill "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true; echo; echo "túnel encerrado"' EXIT
+trap 'exit 0' INT TERM
+
+# Espera o túnel aceitar conexões (até ~10 s).
+for _ in $(seq 1 50); do
+  kill -0 "$PID" 2>/dev/null || { echo "o túnel não subiu" >&2; exit 1; }
+  curl -s -o /dev/null "$URL/" && break
+  sleep 0.2
+done
+
+echo "painel: $URL (túnel ssh pid $PID; Ctrl+C encerra)"
+if [ -n "${PAINEL_SEM_NAVEGADOR:-}" ]; then
+  :
+elif command -v wslview >/dev/null; then
+  wslview "$URL" >/dev/null 2>&1 || true
+elif command -v xdg-open >/dev/null; then
+  xdg-open "$URL" >/dev/null 2>&1 || true
+fi
+wait "$PID"

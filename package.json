@@ -5,12 +5,13 @@
   "workspaces": [
     "dominio",
     "worker",
-    "testes"
+    "testes",
+    "painel"
   ],
   "scripts": {
     "test": "bun --filter '!app' test"
   },
-  "devDependencies": {
+  "dependencies": {
     "@instantdb/core": "1.0.67"
   }
 }

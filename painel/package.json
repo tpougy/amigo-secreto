@@ -1,0 +1,12 @@
+{
+  "name": "@amigo/painel",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun --bun node_modules/@openworkflow/dashboard/bin.mjs"
+  },
+  "dependencies": {
+    "@openworkflow/dashboard": "0.1.12",
+    "openworkflow": "0.11.0"
+  }
+}

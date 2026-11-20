@@ -1,0 +1,17 @@
+# Contexto de build = repositório inteiro (worker/Dockerfile e painel/Dockerfile).
+**/node_modules
+**/*.test.ts
+.git
+.env
+.env.*
+!.env.example
+.changelog
+.superpowers
+docs
+discussion
+spikes
+app/build
+app/.svelte-kit
+dados
+**/*.db
+**/*.db-*
