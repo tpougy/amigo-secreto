@@ -6,7 +6,8 @@
     "dominio",
     "worker",
     "testes",
-    "painel"
+    "painel",
+    "app"
   ],
   "scripts": {
     "test": "bun --filter '!app' test"

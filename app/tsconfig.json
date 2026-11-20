@@ -1,0 +1,9 @@
+{
+	"extends": "$app/tsconfig",
+	"compilerOptions": {
+		"strict": true
+	},
+	"include": ["src", "vite.config.ts"],
+	// Testes rodam com `bun test` (tipos de bun:test não entram no app do navegador).
+	"exclude": ["src/**/*.test.ts"]
+}
