@@ -1,0 +1,7 @@
+{
+  "name": "@amigo/dominio",
+  "private": true,
+  "type": "module",
+  "main": "index.ts",
+  "scripts": { "test": "bun test" }
+}

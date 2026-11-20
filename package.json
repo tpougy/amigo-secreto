@@ -2,7 +2,7 @@
   "name": "amigo-secreto",
   "private": true,
   "packageManager": "bun@1.4.5",
-  "workspaces": ["dominio", "worker", "mcp", "ingestao", "app", "painel"],
+  "workspaces": ["dominio"],
   "scripts": {
     "test": "bun --filter '!app' test"
   }
