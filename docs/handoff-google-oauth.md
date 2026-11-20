@@ -39,7 +39,11 @@ O `config:set` reinicia o app. Confira `curl https://amigo-mcp.app.tpou.gy/healt
 
 ## 4. Ligar o Google no front
 
-Em `app/.env.production` ponha `PUBLIC_LOGIN_GOOGLE=on` (e, se quiser só Google, `PUBLIC_LOGIN_MAGIC=off`; hoje o magic code não envia e-mail) e publique:
+Em duas publicações, para nunca ficar sem login:
+
+1. Em `app/.env.production` ponha `PUBLIC_LOGIN_GOOGLE=on` (mantendo o magic code ligado) e publique com `infra/pages.sh`.
+2. **Teste o login com Google de ponta a ponta** no site publicado (entrar, criar ou abrir um grupo, sair e entrar de novo), no computador e no celular. Só siga se funcionar.
+3. Então ponha `PUBLIC_LOGIN_MAGIC=off` e publique de novo com `infra/pages.sh`. **Obrigatório antes de convidar gente de fora:** com `EMAIL_PROVIDER=log` o código mágico não chega a ninguém, só aparece no log do Instant, então para usuários reais o login por código não funciona (e só quem tem acesso à VPS conseguiria entrar por ele).
 
 ```bash
 infra/pages.sh

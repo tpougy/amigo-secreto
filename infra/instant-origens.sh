@@ -6,6 +6,10 @@
 #   POST   /dash/apps/<id>/authorized_redirect_origins  {"service":"generic","params":["<host>"]}
 #   DELETE /dash/apps/<id>/authorized_redirect_origins/<origemId>
 # O admin token do app serve de Bearer em /dash. Nunca imprime o token.
+#
+# ATENÇÃO: este script REMOVE do app toda origem "generic" que não estiver em `origens` abaixo,
+# inclusive as cadastradas à mão no painel ou por outro script. Para adicionar uma origem, ponha-a
+# na lista; nunca rode com a lista incompleta.
 set -euo pipefail
 raiz="$(cd "$(dirname "$0")/.." && pwd)"
 set -a
