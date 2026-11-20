@@ -75,7 +75,8 @@
 		</div>
 		<Card.Root class="border-2 bg-card shadow-md">
 			<Card.Content class="px-4 py-5 sm:px-6">
-				{#key participante.id}
+				<!-- As respostas podem chegar depois do participante; a chave refaz o formulário quando mudam. -->
+				{#key `${participante.id}:${respostas.map((r) => r.id).sort().join(",")}`}
 					<FormularioPerfil
 						participanteId={participante.id}
 						{campos}

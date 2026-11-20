@@ -51,7 +51,7 @@
 	);
 
 	$effect(() => {
-		if (destino?.tipo === 'ir-para-grupo') void goto(`/grupos/${destino.id}`, { replaceState: true });
+		if (destino?.tipo === 'ir-para-grupo' && !entrando) void goto(`/grupos/${destino.id}`, { replaceState: true });
 	});
 
 	let apelido = $state('');
@@ -91,6 +91,7 @@
 					})
 					.link({ grupo: grupo.id, usuario: usuario.id })
 			);
+			// `entrando` segura o redirecionamento automático (a consulta já enxerga o novo vínculo).
 			await goto(`/grupos/${grupo.id}/perfil`);
 		} catch (err) {
 			const r = erroDeEntrada(err);
