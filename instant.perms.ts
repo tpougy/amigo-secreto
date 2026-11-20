@@ -80,9 +80,12 @@ const rules = {
       grupoAberto: "'aberto' in data.ref('grupo.status')",
       chaveCerta:
         "size(data.ref('grupo.id')) == 1 && data.chave == data.ref('grupo.id')[0] + ':' + auth.id",
+      // `removido` só vai de false para true (remoção é definitiva, nos dois caminhos).
+      removidoSoTrue: "!('removido' in request.modifiedFields) || newData.removido == true",
       soCamposDoProprio:
-        "request.modifiedFields.all(f, f in ['apelido', 'perfilCompleto', 'viuParNaRodada', 'removido'])",
-      soCamposDoOrganizador: "request.modifiedFields.all(f, f in ['removido'])",
+        "request.modifiedFields.all(f, f in ['apelido', 'perfilCompleto', 'viuParNaRodada', 'removido']) && removidoSoTrue",
+      soCamposDoOrganizador:
+        "request.modifiedFields.all(f, f in ['removido']) && removidoSoTrue",
     },
     allow: {
       view: "ehMembro || ehOrganizador",
@@ -130,12 +133,21 @@ const rules = {
   restricoes: {
     bind: {
       ehOrganizador: "auth.id != null && auth.id in data.ref('grupo.organizador.id')",
+      participantesDoGrupo:
+        "size(data.ref('grupo.id')) == 1 && data.ref('grupo.id')[0] in data.ref('participanteA.grupo.id') && data.ref('grupo.id')[0] in data.ref('participanteB.grupo.id')",
     },
     allow: {
       view: "ehOrganizador",
-      create: "ehOrganizador",
+      create: "ehOrganizador && participantesDoGrupo",
       update: "ehOrganizador",
       delete: "ehOrganizador",
+      // Links só na criação; para mudar, apaga-se a restrição e cria-se outra.
+      link: {
+        grupo: "actions.data == 'create' && auth.id in linkedData.ref('organizador.id')",
+        participanteA: "actions.data == 'create'",
+        participanteB: "actions.data == 'create'",
+      },
+      unlink: { grupo: "false", participanteA: "false", participanteB: "false" },
     },
   },
 

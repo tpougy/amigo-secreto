@@ -2,6 +2,7 @@
 // Roda contra o app de TESTE (amigo-secreto-teste). Ver instant.perms.ts.
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { id } from "@instantdb/admin";
+import { gerarCodigo } from "@amigo/dominio";
 import {
   adminTeste,
   criarGrupoTeste,
@@ -30,6 +31,8 @@ let H: { grupoId: string; codigo: string };
 let pOrg: string;
 let pA: string;
 let pB: string;
+let pMembroH: string; // participante de membroH em H
+let pOrgEmH: string; // org (organizador de G) também é membro de H
 
 async function esperarTipo(p: Promise<unknown>, tipo: string) {
   const e = await erroDe(p);
@@ -45,7 +48,8 @@ beforeAll(async () => {
   pOrg = await entrar(org, G.grupoId, G.codigo);
   pA = await entrar(a, G.grupoId, G.codigo);
   pB = await entrar(b, G.grupoId, G.codigo);
-  await entrar(membroH, H.grupoId, H.codigo);
+  pMembroH = await entrar(membroH, H.grupoId, H.codigo);
+  pOrgEmH = await entrar(org, H.grupoId, H.codigo);
 });
 
 afterAll(async () => {
@@ -417,6 +421,20 @@ describe("participantes: alteração e remoção", () => {
     expect(r.participantes[0]!.usuario).toBeUndefined();
   });
 
+  test("o próprio não desfaz removido (true -> false)", async () => {
+    const u = await criarUsuario(PREFIXO);
+    const pid = await entrar(u, G.grupoId, G.codigo);
+    await u.db.transact(u.db.tx.participantes[pid]!.update({ removido: true }));
+    await esperarTipo(
+      u.db.transact(u.db.tx.participantes[pid]!.update({ removido: false })),
+      "permission-denied",
+    );
+    await esperarTipo(
+      org.db.transact(org.db.tx.participantes[pid]!.update({ removido: false })),
+      "permission-denied",
+    );
+  });
+
   test("membro não marca removido em outro participante", async () => {
     await esperarTipo(
       a.db.transact(a.db.tx.participantes[pB]!.update({ removido: true })),
@@ -466,6 +484,118 @@ describe("restrições", () => {
     expect((await org.db.query({ restricoes: {} })).restricoes.map((r) => r.id)).toEqual([rid]);
     await esperarTipo(a.db.transact(a.db.tx.restricoes[rid]!.delete()), "permission-denied");
     await org.db.transact(org.db.tx.restricoes[rid]!.delete());
+  });
+
+  test("restrição não muda de grupo nem de participantes depois de criada", async () => {
+    const rid = id();
+    await org.db.transact(
+      org.db.tx.restricoes[rid]!.create({ motivo: "x" })
+        .link({ grupo: G.grupoId, participanteA: pA, participanteB: pB }),
+    );
+    // org é membro de H, mas não pode empurrar a restrição para o sorteio de H.
+    await esperarTipo(
+      org.db.transact(org.db.tx.restricoes[rid]!.link({ grupo: H.grupoId })),
+      "permission-denied",
+    );
+    await esperarTipo(
+      org.db.transact(org.db.tx.restricoes[rid]!.link({ participanteA: pMembroH })),
+      "permission-denied",
+    );
+    await esperarTipo(
+      org.db.transact(org.db.tx.restricoes[rid]!.unlink({ participanteB: pB })),
+      "permission-denied",
+    );
+    await esperarTipo(
+      org.db.transact(org.db.tx.grupos[G.grupoId]!.unlink({ restricoes: rid })),
+      "permission-denied",
+    );
+    const r = await admin.query({
+      restricoes: { $: { where: { id: rid } }, grupo: {}, participanteA: {}, participanteB: {} },
+    });
+    expect(r.restricoes[0]!.grupo!.id).toBe(G.grupoId);
+    expect(r.restricoes[0]!.participanteA!.id).toBe(pA);
+    expect(r.restricoes[0]!.participanteB!.id).toBe(pB);
+    await org.db.transact(org.db.tx.restricoes[rid]!.delete());
+  });
+
+  test("restrição em G com participantes de H é negada", async () => {
+    await esperarTipo(
+      org.db.transact(
+        org.db.tx.restricoes[id()]!.create({ motivo: "x" })
+          .link({ grupo: G.grupoId, participanteA: pMembroH, participanteB: pOrgEmH }),
+      ),
+      "permission-denied",
+    );
+    await esperarTipo(
+      org.db.transact(
+        org.db.tx.restricoes[id()]!.create({ motivo: "x" })
+          .link({ grupo: G.grupoId, participanteA: pA, participanteB: pMembroH }),
+      ),
+      "permission-denied",
+    );
+  });
+});
+
+describe("organizador: criação do grupo no front", () => {
+  test("uma só transação cria grupo, campos e o participante do organizador (sem ruleParams)", async () => {
+    const o = await criarUsuario(PREFIXO);
+    const grupoId = id();
+    const campoIds = [id(), id()];
+    const participanteId = id();
+    await o.db.transact([
+      o.db.tx.grupos[grupoId]!.create({
+        titulo: "Front",
+        tema: "livro",
+        codigo: gerarCodigo(),
+        status: "aberto",
+        rodadaAtual: 0,
+        criadoEm: Date.now(),
+      }).link({ organizador: o.id }),
+      ...campoIds.map((c, i) =>
+        o.db.tx.campos[c]!.create({ rotulo: `c${i}`, tipo: "texto", obrigatorio: false, ordem: i })
+          .link({ grupo: grupoId }),
+      ),
+      o.db.tx.participantes[participanteId]!.create({
+        apelido: "Org",
+        perfilCompleto: false,
+        removido: false,
+        entrouEm: Date.now(),
+        chave: `${grupoId}:${o.id}`,
+      }).link({ grupo: grupoId, usuario: o.id }),
+    ]);
+    const r = await admin.query({
+      grupos: {
+        $: { where: { id: grupoId } },
+        organizador: {},
+        campos: {},
+        participantes: { usuario: {} },
+      },
+    });
+    expect(r.grupos).toHaveLength(1);
+    const g = r.grupos[0]!;
+    expect(g.organizador!.id).toBe(o.id);
+    expect(g.campos.map((c) => c.id).sort()).toEqual([...campoIds].sort());
+    expect(g.participantes.map((p) => p.id)).toEqual([participanteId]);
+    expect(g.participantes[0]!.usuario!.id).toBe(o.id);
+    // E o organizador vê tudo como membro.
+    const v = await o.db.query({ grupos: { campos: {}, participantes: {} } });
+    expect(v.grupos.map((x) => x.id)).toEqual([grupoId]);
+  });
+
+  test("organizador não entra no próprio grupo depois que ele deixa de estar aberto", async () => {
+    const o = await criarUsuario(PREFIXO);
+    const g = await criarGrupoTeste(o, { status: "sorteado" });
+    const semCodigo = o.db.transact(
+      o.db.tx.participantes[id()]!.create({
+        apelido: "Org",
+        perfilCompleto: false,
+        removido: false,
+        entrouEm: Date.now(),
+        chave: `${g.grupoId}:${o.id}`,
+      }).link({ grupo: g.grupoId, usuario: o.id }),
+    );
+    await esperarTipo(semCodigo, "permission-denied");
+    await esperarTipo(entrar(o, g.grupoId, g.codigo), "permission-denied");
   });
 });
 
