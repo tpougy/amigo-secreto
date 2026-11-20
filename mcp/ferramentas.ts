@@ -73,6 +73,7 @@ async function contexto(db: Db, grupo: string) {
     grupos: {
       $: { where: codigo ? { codigo } : { id } },
       campos: {},
+      sorteios: {},
       participantes: { $: { where: { "usuario.id": eu } }, respostas: { campo: {} } },
     },
   });
@@ -102,13 +103,20 @@ export async function meusGrupos(db: Db): Promise<{ organizando: GrupoResumo[]; 
   };
 }
 
+export const AVISO_SEM_SORTEIO = "O sorteio ainda não aconteceu";
+export const AVISO_REFAZENDO = "O sorteio está sendo refeito. Tente de novo em instantes.";
+
 export type AmigoSecreto =
   | { apelido: string; respostas: { rotulo: string; valor: ValorResposta }[] }
-  | { aviso: "O sorteio ainda não aconteceu" };
+  | { aviso: typeof AVISO_SEM_SORTEIO | typeof AVISO_REFAZENDO };
 
 export async function meuAmigoSecreto(db: Db, grupo: string): Promise<AmigoSecreto | Erro> {
   const ctx = await contexto(db, grupo);
   if ("erro" in ctx) return ctx;
+  // Sorteio em andamento: o par atual está para mudar. Não devolve nem marca `viuParNaRodada`.
+  if (ctx.grupo.sorteios.some((s) => s.status === "pendente" || s.status === "processando")) {
+    return { aviso: ctx.grupo.rodadaAtual >= 1 ? AVISO_REFAZENDO : AVISO_SEM_SORTEIO };
+  }
   // A regra de `pares` só mostra o par em que o usuário é o doador.
   const { pares } = await db.query({
     pares: {
@@ -120,7 +128,7 @@ export async function meuAmigoSecreto(db: Db, grupo: string): Promise<AmigoSecre
   const par = pares
     .filter((p) => p.sorteio?.status === "concluido" && p.receptor)
     .sort((a, b) => (b.sorteio?.rodada ?? 0) - (a.sorteio?.rodada ?? 0))[0];
-  if (!par?.receptor || !par.sorteio) return { aviso: "O sorteio ainda não aconteceu" };
+  if (!par?.receptor || !par.sorteio) return { aviso: AVISO_SEM_SORTEIO };
 
   // Ver o par pelo MCP conta como "já viu" (como revelar o par na página).
   const rodada = par.sorteio.rodada;

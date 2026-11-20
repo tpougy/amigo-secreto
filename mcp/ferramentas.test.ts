@@ -185,4 +185,29 @@ describe("depois do sorteio", () => {
     const { participantes } = await admin.query({ participantes: { $: { where: { id: part.A! } } } });
     expect(participantes[0]!.viuParNaRodada).toBe(1);
   });
+
+  test("com a rodada 2 pendente/processando: aviso de refazendo, sem par e sem marcar viuParNaRodada", async () => {
+    const sorteio2 = id();
+    await admin.transact(
+      admin.tx.sorteios[sorteio2]!
+        .create({ status: "pendente", rodada: 2, chave: `${grupoId}:2`, criadoEm: Date.now() })
+        .link({ grupo: grupoId }),
+    );
+    // B "ainda não viu": a chamada durante o refazer não pode marcar.
+    await admin.transact(admin.tx.participantes[part.B!]!.update({ viuParNaRodada: null }));
+    try {
+      for (const status of ["pendente", "processando"]) {
+        await admin.transact(admin.tx.sorteios[sorteio2]!.update({ status }));
+        expect(await meuAmigoSecreto(B.db, codigo)).toEqual({
+          aviso: "O sorteio está sendo refeito. Tente de novo em instantes.",
+        });
+      }
+      const { participantes } = await admin.query({ participantes: { $: { where: { id: part.B! } } } });
+      expect(participantes[0]!.viuParNaRodada ?? null).toBeNull();
+    } finally {
+      await admin.transact(admin.tx.sorteios[sorteio2]!.delete());
+    }
+    // Sem o sorteio em andamento, volta a devolver o par.
+    expect(await meuAmigoSecreto(B.db, codigo)).toMatchObject({ apelido: apelido(C) });
+  });
 });
