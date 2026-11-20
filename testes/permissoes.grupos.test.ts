@@ -530,14 +530,13 @@ describe("restrições", () => {
     const nova = (db: Usuario["db"]) =>
       db.transact(
         db.tx.restricoes[rid]!.create({ motivo: "casal" })
-          .link({ grupo: G.grupoId, participanteA: pOrg, participanteB: pB }),
+          .link({ grupo: G.grupoId, participanteA: pA, participanteB: pB }),
       );
     await esperarTipo(nova(a.db), "permission-denied");
     await nova(org.db);
     expect((await a.db.query({ restricoes: {} })).restricoes).toEqual([]);
     expect((await org.db.query({ restricoes: {} })).restricoes.map((r) => r.id)).toEqual([rid]);
-    // Membro não citado não apaga. (Quem é citado pode, com o grupo aberto, só para a cascata de
-    // "sair do grupo": ver permissoes.conta.test.ts. E nem vê a restrição para saber o id.)
+    // Nem quem é citado (A) apaga: só o organizador.
     await esperarTipo(a.db.transact(a.db.tx.restricoes[rid]!.delete()), "permission-denied");
     await org.db.transact(org.db.tx.restricoes[rid]!.delete());
   });

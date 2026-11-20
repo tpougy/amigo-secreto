@@ -1,6 +1,7 @@
 // Integração do workflow `apagar-conta`: app de TESTE do Instant + worker real do OpenWorkflow
 // (SQLite num arquivo temporário, concorrência 1).
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,7 +19,9 @@ import {
   simularWorker,
   type Usuario,
 } from "../../testes/instant-teste";
-import { definirApagarConta, limparDados, processarPedidosExclusao } from "./apagarConta";
+import { dispararComRetomada } from "../nucleo/disparar";
+import { definirApagarConta, limparDados, processarPedidosExclusao, specApagarConta } from "./apagarConta";
+import type { AdminDb } from "./sortear";
 
 setDefaultTimeout(60_000);
 
@@ -216,5 +219,66 @@ describe("workflow apagar-conta", () => {
     expect(r.$users).toEqual([]);
     expect(r.grupos).toEqual([]);
     expect(r.participantes).toEqual([]);
+  });
+
+  test("deleteUser falha além do retry: pedido segue pendente e a entrega seguinte termina", async () => {
+    campainha.parar(); // o worker principal não deve pegar este pedido
+    const arquivo = join(DIR, `ow-teste-${PREFIXO}-falha.db`);
+    let falhar = true;
+    // `auth.deleteUser` "fora do ar"; o resto do admin funciona.
+    const dbInstavel = new Proxy(admin, {
+      get(t, k, r) {
+        const v = Reflect.get(t, k, r);
+        if (k !== "auth" || !falhar) return v;
+        return new Proxy(v, {
+          get(a, k2, r2) {
+            if (k2 === "deleteUser") return async () => { throw new Error("auth fora"); };
+            return Reflect.get(a, k2, r2);
+          },
+        });
+      },
+    }) as AdminDb;
+    const be = BackendSqlite.connect(arquivo);
+    const ow2 = new OpenWorkflow({ backend: be });
+    definirApagarConta(ow2, dbInstavel, { retryPasso: { maximumAttempts: 2, initialInterval: "50ms" } });
+    const w2 = ow2.newWorker({ concurrency: 1 });
+    await w2.start();
+    const runs = () => {
+      const d = new Database(arquivo, { readonly: true });
+      try {
+        return d.query("select idempotency_key as chave, status from workflow_runs").all() as { chave: string; status: string }[];
+      } finally {
+        d.close();
+      }
+    };
+    try {
+      const V = await criarUsuario(PREFIXO);
+      const g = await criarGrupoTeste(O);
+      const pV = await entrar(V, g.grupoId, g.codigo);
+      const pedidoV = await pedirExclusao(V);
+
+      await dispararComRetomada(ow2, specApagarConta, { pedidoId: pedidoV }, pedidoV);
+      const t0 = Date.now();
+      while (!runs().some((r) => r.status === "failed") && Date.now() - t0 < 15_000) await dormir(100);
+      expect(runs().map((r) => r.status)).toEqual(["failed"]);
+      const meio = await admin.query({
+        pedidosExclusao: { $: { where: { id: pedidoV } } },
+        $users: { $: { where: { id: V.id } } },
+        participantes: { $: { where: { id: pV } } },
+      });
+      expect(meio.pedidosExclusao[0]!.status).toBe("pendente"); // não concluiu sem apagar o usuário
+      expect(meio.$users).toHaveLength(1);
+      expect(meio.participantes).toEqual([]); // limpar-dados já tinha rodado
+
+      // O auth volta; a próxima entrega da campainha abre um run de retomada que termina.
+      falhar = false;
+      await dispararComRetomada(ow2, specApagarConta, { pedidoId: pedidoV }, pedidoV);
+      await esperarConcluido(pedidoV, V.id);
+      expect(runs().map((r) => r.status).sort()).toEqual(["completed", "failed"]);
+    } finally {
+      await w2.stop();
+      await be.stop();
+      for (const suf of ["", "-wal", "-shm"]) rmSync(arquivo + suf, { force: true });
+    }
   });
 });

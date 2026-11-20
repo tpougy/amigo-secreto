@@ -10,7 +10,7 @@
 <script lang="ts">
 	// Restrições do sorteio ("A e B não se tiram", nos dois sentidos). Só o organizador vê e edita;
 	// fica na aba Sorteio antes do primeiro sorteio e entre rodadas. Restrições com removidos
-	// aparecem marcadas e são ignoradas pelo worker.
+	// ou com quem saiu do grupo (link vazio) aparecem marcadas e são ignoradas pelo worker.
 	import { id } from '@instantdb/core';
 	import { db } from '#lib/instant.js';
 	import { mensagemDeErro } from '#lib/erros.js';
@@ -99,7 +99,7 @@
 							{r.participanteB?.apelido ?? '?'}
 						</p>
 						{#if r.motivo}<p class="text-xs text-muted-foreground">{r.motivo}</p>{/if}
-						{#if orfa}<p class="text-xs font-bold">Ignorada: alguém foi removido.</p>{/if}
+						{#if orfa}<p class="text-xs font-bold">Ignorada: alguém saiu ou foi removido.</p>{/if}
 					</div>
 					{#if editavel}
 						<Button

@@ -147,9 +147,6 @@ const rules = {
   restricoes: {
     bind: {
       ehOrganizador: "auth.id != null && auth.id in data.ref('grupo.organizador.id')",
-      // Quem sai do grupo (delete do próprio participante) apaga em cascata as restrições que o citam.
-      citaOAutorComGrupoAberto:
-        "auth.id != null && 'aberto' in data.ref('grupo.status') && (auth.id in data.ref('participanteA.usuario.id') || auth.id in data.ref('participanteB.usuario.id'))",
       participantesDoGrupo:
         "size(data.ref('grupo.id')) == 1 && data.ref('grupo.id')[0] in data.ref('participanteA.grupo.id') && data.ref('grupo.id')[0] in data.ref('participanteB.grupo.id')",
     },
@@ -157,11 +154,9 @@ const rules = {
       view: "ehOrganizador",
       create: "ehOrganizador && participantesDoGrupo",
       update: "ehOrganizador",
-      // O servidor checa `delete` nos filhos da cascata: sem este termo, sair do grupo (só com o
-      // grupo aberto) falharia para quem aparece numa restrição. Quem é citado não vê a
-      // restrição (view: só o organizador; o id não vaza pelos links), então na prática só a
-      // apaga junto com a própria participação.
-      delete: "ehOrganizador || citaOAutorComGrupoAberto",
+      // Só o organizador. Os links participanteA/B não têm cascata: quem sai do grupo deixa a
+      // restrição órfã (ignorada pelo sorteio), sem precisar de permissão sobre ela.
+      delete: "ehOrganizador",
       // Links só na criação; para mudar, apaga-se a restrição e cria-se outra.
       link: {
         grupo: "actions.data == 'create' && auth.id in linkedData.ref('organizador.id')",
@@ -231,6 +226,8 @@ const rules = {
       create: "organizaPeloPath",
       update: "organizaPeloPath",
       delete: "organizaPeloPath",
+      // Só liga a um grupo o arquivo do path desse grupo (o lado `grupos.capa` exige o organizador).
+      link: { grupoCapa: "data.path.startsWith('grupos/' + linkedData.id + '/')" },
     },
   },
 

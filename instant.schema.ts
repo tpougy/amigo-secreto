@@ -96,12 +96,14 @@ const _schema = i.schema({
       forward: { on: "restricoes", has: "one", label: "grupo", onDelete: "cascade" },
       reverse: { on: "grupos", has: "many", label: "restricoes" },
     },
+    // Sem cascata nos participantes: quem sai do grupo não precisa (nem pode) apagar restrições;
+    // a restrição fica órfã, o sorteio a ignora e o organizador a vê como "Ignorada".
     restricaoParticipanteA: {
-      forward: { on: "restricoes", has: "one", label: "participanteA", onDelete: "cascade" },
+      forward: { on: "restricoes", has: "one", label: "participanteA" },
       reverse: { on: "participantes", has: "many", label: "restricoesA" },
     },
     restricaoParticipanteB: {
-      forward: { on: "restricoes", has: "one", label: "participanteB", onDelete: "cascade" },
+      forward: { on: "restricoes", has: "one", label: "participanteB" },
       reverse: { on: "participantes", has: "many", label: "restricoesB" },
     },
     sorteioGrupo: {

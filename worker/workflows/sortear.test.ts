@@ -325,6 +325,23 @@ describe("workflow sortear", () => {
     expect(s.pares).toHaveLength(3);
   });
 
+  test("6b. restrição órfã (participante saiu do grupo, link vazio) é ignorada", async () => {
+    const G = await grupoCom(4);
+    const [a, b, c, d] = G.participantes as [string, string, string, string];
+    await restringir(G, a, d);
+    await restringir(G, d, b);
+    await restringir(G, c, d);
+    // d sai antes do sorteio: sem cascata, as 3 restrições ficam com um lado vazio.
+    await admin.transact(admin.tx.participantes[d]!.delete());
+    const { restricoes } = await admin.query({ restricoes: { $: { where: { "grupo.id": G.grupoId } }, participanteA: {}, participanteB: {} } });
+    expect(restricoes).toHaveLength(3);
+    expect(restricoes.every((r) => !r.participanteA || !r.participanteB)).toBe(true);
+    const sorteioId = await pedirSorteio(G, 1);
+    const { s } = await esperarFim(sorteioId);
+    expect(s.status).toBe("concluido");
+    expect(s.pares).toHaveLength(3);
+  });
+
   test("7. grupo com 2 participantes ativos: erro de poucos participantes", async () => {
     const G = await grupoCom(3);
     await remover(G.participantes[2]!);

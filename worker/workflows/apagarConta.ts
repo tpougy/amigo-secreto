@@ -101,14 +101,17 @@ export function definirApagarConta(ow: OpenWorkflow, db: AdminDb, opcoes: { retr
       usuarioId ? limparDados(db, usuarioId) : { anonimizadas: 0, apagadas: 0, grupos: 0 },
     );
 
-    await step.run({ name: "concluir-pedido", retryPolicy: RETRY_PASSO }, async () => {
-      await db.transact(db.tx.pedidosExclusao[pedidoId]!.update({ status: "concluido" }));
-      return null;
-    });
-
+    // Apagar o usuário ANTES de concluir: se este passo esgotar as tentativas, o pedido continua
+    // `pendente`, a campainha o entrega de novo e um run novo (com usuarioId já null, se o
+    // usuário chegou a ser apagado) termina o trabalho.
     await step.run({ name: "apagar-usuario", retryPolicy: RETRY_PASSO }, async () => {
       // Devolve null se o usuário já não existe (reexecução): idempotente.
       if (usuarioId) await db.auth.deleteUser({ id: usuarioId });
+      return null;
+    });
+
+    await step.run({ name: "concluir-pedido", retryPolicy: RETRY_PASSO }, async () => {
+      await db.transact(db.tx.pedidosExclusao[pedidoId]!.update({ status: "concluido" }));
       return null;
     });
 

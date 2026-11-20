@@ -214,6 +214,25 @@ describe("capa do grupo ($files)", () => {
     expect(capa == null || typeof capa === "string").toBe(true);
   });
 
+  test("organizador não liga ao próprio grupo a capa de outro grupo", async () => {
+    // E organiza G3 e envia a capa de G3. O2 tenta ligar esse arquivo a G2: com a capa de G3 já
+    // ligada, o has-one recusa (record-not-unique); sem ligação, a regra de link do $files recusa.
+    const caminhoG3 = `grupos/${G3.grupoId}/capa.jpg`;
+    const up = await admin.storage.uploadFile(caminhoG3, Buffer.from([0xff, 0xd8, 0xff, 0xd9]), { contentType: "image/jpeg" });
+    try {
+      const solto = await erroDe(O2.db.transact(O2.db.tx.grupos[G2.grupoId]!.link({ capa: up.data.id })));
+      expect(tipoErro(solto)).toBe("permission-denied");
+      await admin.transact(admin.tx.grupos[G3.grupoId]!.link({ capa: up.data.id }));
+      const ligado = await erroDe(O2.db.transact(O2.db.tx.grupos[G2.grupoId]!.link({ capa: up.data.id })));
+      expect(["permission-denied", "record-not-unique"]).toContain(tipoErro(ligado) ?? "");
+      const r = await admin.query({ grupos: { $: { where: { id: { $in: [G2.grupoId, G3.grupoId] } } }, capa: {} } });
+      expect(r.grupos.find((g) => g.id === G2.grupoId)!.capa?.path).toBe(caminho);
+      expect(r.grupos.find((g) => g.id === G3.grupoId)!.capa?.path).toBe(caminhoG3);
+    } finally {
+      await admin.storage.delete(caminhoG3);
+    }
+  });
+
   test("membro e estranho não apagam a capa nem a desligam", async () => {
     for (const u of [M, E]) {
       await erroDe(u.db.transact(u.db.tx.$files[lookup("path", caminho)]!.delete()));
@@ -322,7 +341,7 @@ describe("pedidosExclusao", () => {
 });
 
 describe("sair do grupo antes do sorteio", () => {
-  test("delete do próprio participante leva respostas e restrições; dá para entrar de novo", async () => {
+  test("delete do próprio participante leva as respostas; a restrição fica órfã; dá para entrar de novo", async () => {
     const [O3, S, T] = await Promise.all([1, 2, 3].map(() => criarUsuario(PREFIXO)));
     const G4 = await criarGrupoTeste(O3!, { organizadorParticipa: true });
     const pS = await entrar(S!, G4.grupoId, G4.codigo);
@@ -336,17 +355,24 @@ describe("sair do grupo antes do sorteio", () => {
     await O3!.db.transact(
       O3!.db.tx.restricoes[restricaoId]!.create({}).link({ grupo: G4.grupoId, participanteA: pT, participanteB: pS }),
     );
-    // Quem é citado numa restrição não a vê, mas sai do grupo (a cascata a apaga).
+    // Quem é citado numa restrição não a vê nem a apaga, mas sai do grupo: sem cascata nos
+    // participantes, a restrição fica órfã (o sorteio a ignora).
     expect((await S!.db.query({ restricoes: {} })).restricoes).toEqual([]);
+    expect(tipoErro(await erroDe(S!.db.transact(S!.db.tx.restricoes[restricaoId]!.delete())))).toBe("permission-denied");
     await S!.db.transact(S!.db.tx.participantes[pS]!.delete());
     const r = await admin.query({
       participantes: { $: { where: { id: pS } } },
       respostas: { $: { where: { id: respostaId } } },
-      restricoes: { $: { where: { id: restricaoId } } },
     });
     expect(r.participantes).toEqual([]);
     expect(r.respostas).toEqual([]);
-    expect(r.restricoes).toEqual([]);
+    // O organizador vê a restrição órfã (sem o lado B) e consegue apagá-la.
+    const o = await O3!.db.query({ restricoes: { $: { where: { id: restricaoId } }, participanteA: {}, participanteB: {} } });
+    expect(o.restricoes).toHaveLength(1);
+    expect(o.restricoes[0]!.participanteA?.id).toBe(pT);
+    expect(o.restricoes[0]!.participanteB ?? null).toBeNull();
+    await O3!.db.transact(O3!.db.tx.restricoes[restricaoId]!.delete());
+    expect((await admin.query({ restricoes: { $: { where: { id: restricaoId } } } })).restricoes).toEqual([]);
     // A chave única foi liberada: S entra de novo. T não apaga a participação de S.
     const pS2 = await entrar(S!, G4.grupoId, G4.codigo);
     expect(tipoErro(await erroDe(T!.db.transact(T!.db.tx.participantes[pS2]!.delete())))).toBe("permission-denied");
