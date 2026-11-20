@@ -12,7 +12,7 @@
     "app"
   ],
   "scripts": {
-    "test": "bun --filter '!app' test"
+    "test": "bun run --sequential --workspaces --if-present test"
   },
   "dependencies": {
     "@instantdb/core": "1.0.67"

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Mostra o último magic code enviado a um e-mail (o Instant está com EMAIL_PROVIDER=log:
+# o código só aparece no log). Uso: bin/codigo-magico <email>   Depois de pedir o código na tela.
+set -euo pipefail
+email=${1:-}
+[ -n "$email" ] || { echo "uso: $0 <email>" >&2; exit 2; }
+codigo=$(ssh vps-mercurio 'dokku logs instant --num 300' | grep -F "MAGIC CODE for $email:" | tail -1 | sed 's/.*: //')
+[ -n "$codigo" ] || { echo "nenhum código recente para $email (peça o código na tela e tente de novo)" >&2; exit 1; }
+echo "$codigo"

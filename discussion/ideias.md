@@ -454,6 +454,9 @@ amigo-secreto/
 | 2026-11-20 | MCP / sessão longa | O `GoogleProvider` não pede `access_type=offline`: o Google não manda refresh token, o token do MCP vale só o `expires_in` do Google (1 h) e o refresh falha ("No upstream refresh token available"): reconectar a cada hora. Além disso, com a tela de consentimento em modo **Testing**, o Google expira refresh tokens em 7 dias | O teste "sessão após 8 dias" (§7.9) depende disto e de publicar o app OAuth ("In production") | Subclasse passa `extraAuthorizationParams: { access_type: "offline", prompt: "consent" }`; a confirmar com o Google real (credenciais ainda `pendente`) |
 | 2026-11-20 | MCP / Bun e infra | fastmcp (Hono + `node:http` do mcp-proxy) roda no Bun 1.4.5 sem ajuste: `/health` 200, `/mcp` sem token 401 com `WWW-Authenticate`, DCR aceita `https://claude.ai/*` e recusa outros hosts. Clientes DCR e tokens ficam no `DiskStore` (cifrados com a `MCP_ENCRYPTION_KEY`), então sobrevivem a redeploy. Rotas próprias (`getApp()`) rodam antes das do OAuth: com `GOOGLE_CLIENT_ID=pendente`, `/oauth/authorize` responde 503 com recado. Um POST vazio em `/mcp` imprime stack trace do mcp-proxy (o servidor segue no ar) | Stack MCP viável no Bun; chaves geradas uma vez na VPS | `letsencrypt:enable` só depois do 1º deploy (o provisionar avisa e conclui na 2ª execução); o mapa `https:443:8080` é ignorado até haver certificado |
 | 2026-11-20 | Infra / RAM | `amigo-mcp` em repouso: **~47 MiB** (`docker stats`), imagem 436 MB (base `oven/bun:1.4.5` compartilhada, ~69 MB de `node_modules`). Com worker (~21 MiB) e painel (~48 MiB) no ar, `available` da VPS ~967 MB | Os três apps do piloto somam ~115 MiB | Nenhuma |
+| 2026-11-20 | Bun / testes | O `bun --filter '!app' test` da raiz era armadilha dupla: o filtro por nome não excluía nada (o pacote é `@amigo/app`) e rodava os pacotes **em paralelo**, e `testes` e `worker` usam o mesmo app Instant de teste, então um teste de `testes/` falhou por interferência. `bun test` puro na raiz roda tudo num processo só e passa | Monorepo com vários pacotes que dividem um backend de teste precisa rodar em série | `"test": "bun run --sequential --workspaces --if-present test"`: 227 testes, 0 falhas |
+| 2026-11-20 | Seed | O seed idempotente (Zod valida tudo antes de escrever; grupo achado pelo `codigo`; participante e resposta por `lookup("chave")`) refaz a mesma carga duas vezes com as mesmas contagens, no app de teste | Padrão de ingestão idempotente do Pluto (PDF → JSON → upsert por chave natural) | Teste de integração em `ingestao/seed.test.ts`; não rodado em produção |
+| 2026-11-20 | Login / e-mail | Confirmado em produção: com `EMAIL_PROVIDER=log` o código aparece no log do Instant (`MAGIC CODE for <email>: NNNNNN`), 1–2 s depois do `send_magic_code` | O login por código dá para operar sem provedor de e-mail, só com acesso à VPS | `bin/codigo-magico <email>` lê o log; instruções no README |
 
 Perguntas que o piloto deve responder:
 
@@ -466,3 +469,17 @@ Perguntas que o piloto deve responder:
 7. Quanto de memória a VPS usa com um app real? Cabe o Pluto?
 8. O atrito do modo de teste do Google é aceitável com pessoas de fora?
 9. Algo no deploy ou na evolução de schema foi doloroso a ponto de mudar a etapa zero?
+
+### Respostas às perguntas do piloto
+
+| # | Situação | Resposta |
+|---|---|---|
+| 1 | respondida | Sim, sem surpresas: `useAuth`, `useQuery` com `where` por link e sub-consulta, magic code e `signOut` funcionam no build de produção. A única regra é chamar os hooks na inicialização do componente. |
+| 2 | respondida | Sim. Sem código ou com código errado a consulta volta `[]`; com o certo só aquele grupo aparece, sem vazar participantes. O `rateLimit` no `create` freia a força bruta. |
+| 3 | respondida | Sim, sem gambiarra nas regras (`auth.ref`, regras de `link`/`unlink`, `data.ref`). O custo é de modelagem: dados "públicos por código" viram cópia desnormalizada (`organizadorApelido`) e o organizador sem acesso a `$users` exige chaves compostas (`<grupoId>:<userId>`). |
+| 4 | parcial | Confortável para guardar e evoluir (resposta por `lookup("chave")`; campo ou opção removidos são tratados no domínio, sem exceção). Não foi preciso filtrar dentro do JSON, então a consulta por conteúdo de campo segue sem teste. No plano alimentar: validar no domínio, não no schema. |
+| 5 | respondida | Sim, com cuidados: assinatura com watchdog e backoff, passos memorizados (retomada após `kill -9` em ~29 s), idempotência por chave e pendentes processados ao reconectar. Em produção o sorteio leva ~100 ms no worker e ~0,8 s até a UI. Atenção à política de tentativas do OpenWorkflow 0.11. |
+| 6 | em aberto | Depende do Google OAuth (handoff em `docs/handoff-google-oauth.md`). O MCP está no ar, com as correções do fastmcp em `mcp/google.ts`; falta testar no Claude e no ChatGPT e a sessão após 8 dias. |
+| 7 | respondida | Cabe: worker ~21 MiB, painel ~48 MiB e MCP ~45 MiB, **~113 MiB** no total em repouso (`docker stats`), com ~950 MB `available` na VPS. |
+| 8 | em aberto | Depende do Google OAuth. Já se sabe que em modo Testing o Google expira o refresh token em 7 dias e que é preciso **publicar** a tela de consentimento. |
+| 9 | respondida | Nada que mude a etapa zero, mas ficam três lembranças: fixar o mapa de portas no Dokku sem proxy, pôr dependência de runtime na raiz do monorepo e aplicar mudança de `onDelete` em dois pushes (o instantdb-rust não aplica sozinho). E decidir o provedor de e-mail antes de abrir para fora. |
