@@ -227,6 +227,57 @@ describe("respostas depois do sorteio", () => {
   });
 });
 
+// Filtros `where` atravessando links: o filtro não pode revelar o que a regra esconde.
+// Estado: A→B, B→C, C→O, O→A. Sondam O (organizador, tirou A) e C (membro, tirou O);
+// nenhum dos dois tirou B nem vê o par A→B.
+describe("where por links não vaza pares nem respostas", () => {
+  const sondas = () => [
+    ["O (organizador)", O],
+    ["C (membro)", C],
+  ] as const;
+
+  test("participantes where recebidoDe.doador.id = pA → []", async () => {
+    for (const [, u] of sondas()) {
+      const r = await u.db.query({ participantes: { $: { where: { "recebidoDe.doador.id": pA } } } });
+      expect(r.participantes).toEqual([]);
+    }
+  });
+
+  test("participantes where doando.receptor.id = pB → []", async () => {
+    for (const [, u] of sondas()) {
+      const r = await u.db.query({ participantes: { $: { where: { "doando.receptor.id": pB } } } });
+      expect(r.participantes).toEqual([]);
+    }
+  });
+
+  test("participantes where respostas.valor = resposta de B → []", async () => {
+    for (const [, u] of sondas()) {
+      const r = await u.db.query({
+        participantes: { $: { where: { "respostas.valor": `resposta de ${pB}` } } },
+      });
+      expect(r.participantes).toEqual([]);
+    }
+  });
+
+  test("respostas where valor = resposta de B → []", async () => {
+    for (const [, u] of sondas()) {
+      const r = await u.db.query({ respostas: { $: { where: { valor: `resposta de ${pB}` } } } });
+      expect(r.respostas).toEqual([]);
+    }
+  });
+
+  test("controle: o admin acha as mesmas linhas (os filtros funcionam)", async () => {
+    const q1 = await admin.query({ participantes: { $: { where: { "recebidoDe.doador.id": pA } } } });
+    const q2 = await admin.query({ participantes: { $: { where: { "doando.receptor.id": pB } } } });
+    const q3 = await admin.query({ participantes: { $: { where: { "respostas.valor": `resposta de ${pB}` } } } });
+    const q4 = await admin.query({ respostas: { $: { where: { valor: `resposta de ${pB}` } } } });
+    expect(q1.participantes.map((p) => p.id)).toEqual([pB]);
+    expect(q2.participantes.map((p) => p.id)).toEqual([pA]);
+    expect(q3.participantes.map((p) => p.id)).toEqual([pB]);
+    expect(q4.respostas.map((x) => x.id)).toEqual([resposta[pB]!]);
+  });
+});
+
 describe("pedidos de sorteio", () => {
   test("6. O pede a rodada 1 de novo → record-not-unique", async () => {
     await esperarTipo(pedirSorteio(O, G.grupoId, 1), "record-not-unique");
