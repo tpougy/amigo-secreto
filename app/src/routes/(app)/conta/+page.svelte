@@ -16,6 +16,7 @@
 		type DadosExportacao
 	} from '#lib/conta.js';
 	import { mensagemDeErro } from '#lib/erros.js';
+	import AssistenteIA from '#lib/components/AssistenteIA.svelte';
 	import ConfirmarAcao from '#lib/components/ConfirmarAcao.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
@@ -135,6 +136,8 @@
 			<Trash2Icon /> Apagar minha conta
 		</Button>
 	</section>
+
+	<AssistenteIA />
 </div>
 
 <ConfirmarAcao

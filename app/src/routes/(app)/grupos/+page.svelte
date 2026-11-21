@@ -2,6 +2,7 @@
 	import * as Empty from '#lib/components/ui/empty/index.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
+	import AssistenteIA from '#lib/components/AssistenteIA.svelte';
 	import CartaoGrupo from '#lib/components/cartao-grupo.svelte';
 	import { usarSessao } from '#lib/sessao.svelte.js';
 	import type { GrupoResumo } from '#lib/meus-grupos.js';
@@ -87,4 +88,6 @@
 
 	{@render secao('Organizando', 'bg-primary', CrownIcon, sessao.grupos.organizando, 'organizando')}
 	{@render secao('Participando', 'bg-ceu', UsersIcon, sessao.grupos.participando, 'participando')}
+
+	<AssistenteIA />
 </div>
