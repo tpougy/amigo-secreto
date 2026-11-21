@@ -1,6 +1,6 @@
 // Formato do JSON de seed, validado ANTES de qualquer escrita.
 import { z } from "zod";
-import { camposIniciais, normalizarCodigo, TEMAS, validarResposta, type DefCampo } from "@amigo/dominio";
+import { camposIniciais, normalizarCodigo, TEMAS, validarResposta, type DefCampo, type Tema } from "@amigo/dominio";
 
 const email = z.email("E-mail inválido");
 
@@ -14,12 +14,12 @@ const Grupo = z
   .object({
     codigo: z.string().refine((c) => normalizarCodigo(c) === c, "Código inválido (6 caracteres do alfabeto, em maiúsculas)"),
     titulo: z.string().trim().min(3, "Título curto demais").max(80, "Título com mais de 80 caracteres"),
-    tema: z.enum(TEMAS.map((t) => t.id) as [string, ...string[]], "Tema inexistente"),
+    tema: z.enum(TEMAS.map((t) => t.id) as [Tema["id"], ...Tema["id"][]], "Tema inexistente"),
     organizador: email,
     participantes: z.array(Participante),
   })
   .superRefine((g, ctx) => {
-    const campos = camposIniciais(g.tema as never).map((c, ordem) => ({ id: c.rotulo, ...c, ordem }) as DefCampo);
+    const campos = camposIniciais(g.tema).map((c, ordem) => ({ id: c.rotulo, ...c, ordem }) as DefCampo);
     g.participantes.forEach((p, i) => {
       for (const [rotulo, valor] of Object.entries(p.respostas ?? {})) {
         const campo = campos.find((c) => c.rotulo === rotulo);

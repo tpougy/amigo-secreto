@@ -2,7 +2,7 @@
 // Uso: bun scripts/seed/seed.ts <arquivo.json> [--app teste|prod]   (padrão: teste)
 // Credenciais: .env da raiz (o Bun o carrega). Só ids e contagens vão para o log.
 import { id, init, lookup } from "@instantdb/admin";
-import { camposIniciais, perfilCompleto, validarResposta, type DefCampo } from "@amigo/dominio";
+import { camposIniciais, perfilCompleto, validarResposta, type DefCampo, type ValorResposta } from "@amigo/dominio";
 import schema from "@amigo/instant";
 import { lerSeed, type Seed } from "./esquema";
 
@@ -39,10 +39,18 @@ export async function semear(db: Admin, seed: Seed): Promise<Resumo> {
     const apelidoOrg =
       g.participantes.find((p) => p.email === g.organizador)?.apelido ?? g.organizador.split("@")[0]!.slice(0, 40);
 
-    let campos = (existente?.campos ?? []).map((c) => ({ ...c, id: c.id }));
+    // Campos do grupo já no formato do domínio (ordem 0..N-1, como o app grava).
+    let campos: DefCampo[] = (existente?.campos ?? []).map((c) => ({
+      id: c.id,
+      rotulo: c.rotulo,
+      tipo: c.tipo as DefCampo["tipo"],
+      obrigatorio: c.obrigatorio,
+      ordem: c.ordem,
+      ...(c.opcoes ? { opcoes: c.opcoes } : {}),
+    }));
     if (!existente) {
-      const modelos = camposIniciais(g.tema as never);
-      campos = modelos.map((c, ordem) => ({ id: id(), ordem, ...c })) as never;
+      const modelos = camposIniciais(g.tema);
+      campos = modelos.map((c, ordem) => ({ ...c, id: id(), ordem }));
       await db.transact([
         db.tx.grupos[grupoId]!
           .create({
@@ -71,16 +79,7 @@ export async function semear(db: Admin, seed: Seed): Promise<Resumo> {
     }
     resumo.grupos++;
 
-    const defs: DefCampo[] = campos
-      .map((c) => ({
-        id: c.id,
-        rotulo: c.rotulo,
-        tipo: c.tipo as DefCampo["tipo"],
-        obrigatorio: c.obrigatorio,
-        ordem: c.ordem,
-        ...(c.opcoes ? { opcoes: c.opcoes as string[] } : {}),
-      }))
-      .sort((a, b) => a.ordem - b.ordem);
+    const defs: DefCampo[] = [...campos].sort((a, b) => a.ordem - b.ordem);
 
     // O organizador também é participante (como no app), mesmo fora da lista.
     const pessoas = g.participantes.some((p) => p.email === g.organizador)
