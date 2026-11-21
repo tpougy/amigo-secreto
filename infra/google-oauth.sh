@@ -63,15 +63,18 @@ jq -e --argjson a "$json_site" '.web.client_id != $a.web.client_id' >/dev/null <
   { echo "os dois JSONs são do mesmo client; o MCP precisa de um client próprio" >&2; exit 1; }
 
 # --- 1. Instant (client do site) ---------------------------------------------------------------
-# Token e corpo nunca vão para a linha de comando: o token entra por um arquivo de config do curl
-# (process substitution) e o corpo por stdin.
+# Token e corpo nunca vão para a linha de comando: o token fica num arquivo de config do curl
+# temporário (permissão 600, apagado ao sair) e o corpo vai por stdin.
+umask 077
+cfg_curl=$(mktemp)
+trap 'rm -f "$cfg_curl"' EXIT
+printf 'header = "Authorization: Bearer %s"\n' "$INSTANT_ADMIN_TOKEN" > "$cfg_curl"
 chamar() { # chamar <método> <caminho> [corpo]
-  local args=(-sS --fail-with-body -X "$1" "$api$2" -H "Content-Type: application/json")
-  local cfg=(-K <(printf 'header = "Authorization: Bearer %s"\n' "$INSTANT_ADMIN_TOKEN"))
+  local args=(-sS --fail-with-body -K "$cfg_curl" -X "$1" "$api$2" -H "Content-Type: application/json")
   if [ -n "${3:-}" ]; then
-    printf '%s' "$3" | curl "${cfg[@]}" "${args[@]}" --data-binary @-
+    printf '%s' "$3" | curl "${args[@]}" --data-binary @-
   else
-    curl "${cfg[@]}" "${args[@]}"
+    curl "${args[@]}"
   fi
 }
 
