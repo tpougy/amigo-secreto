@@ -7,7 +7,7 @@
 	import { TEMAS } from '@amigo/dominio';
 	import { db } from '#lib/instant.js';
 	import { usarSessao } from '#lib/sessao.svelte.js';
-	import { consultaGrupo, dataBr, emAndamento, paraDefCampos } from '#lib/grupo/consultas.js';
+	import { consultaGrupo, dataBr, emAndamento, paraDefCampos, reabertoEm } from '#lib/grupo/consultas.js';
 	import {
 		AVISO_DESFEITO,
 		bannerRemovidoAposSorteio,
@@ -74,7 +74,10 @@
 			})
 	);
 	// Grupo reaberto: o sorteio anterior foi desfeito e o novo ainda não saiu.
-	const desfeito = $derived(!!grupo && estadoParaParticipante(grupo, !!meuPar) === 'desfeito');
+	// Retardatário (entrou depois de reabrir) não vê o aviso: para ele, só falta o sorteio.
+	const desfeito = $derived(
+		!!grupo && estadoParaParticipante(grupo, !!meuPar, eu, reabertoEm(reaberturas)) === 'desfeito'
+	);
 	const minhasRespostas = $derived(
 		(eu?.respostas ?? []).flatMap((r) => (r.campo ? [{ id: r.id, campoId: r.campo.id, valor: r.valor }] : []))
 	);
@@ -234,6 +237,8 @@
 					meuParticipanteId={eu?.id ?? null}
 					souOrganizador={false}
 					rodadaAtual={grupo.rodadaAtual}
+					rodadaBase={grupo.rodadaBase}
+					status={grupo.status}
 					campoIds={[]}
 				/>
 			</section>

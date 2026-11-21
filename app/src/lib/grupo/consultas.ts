@@ -86,16 +86,22 @@ export function sorteioVigente(sorteios: SorteioBruto[], rodadaAtual: number): S
 
 /**
  * Estado do painel do organizador. Depois de reabrir (`rodadaAtual == rodadaBase`), os pares foram
- * apagados: o sorteio concluído da rodada atual não vale mais e o painel volta a "nunca".
+ * apagados: o sorteio concluído da rodada atual não vale mais e o painel volta a "nunca". Um pedido
+ * com `erro` criado antes da última reabertura concluída (`reabertoEm`) também não interessa mais.
  */
-export function estadoPainel(rodadaAtual: number, sorteios: SorteioBruto[], rodadaBase?: number | null): EstadoPainel {
+export function estadoPainel(
+  rodadaAtual: number,
+  sorteios: SorteioBruto[],
+  rodadaBase?: number | null,
+  reabertoEm?: string | number | null,
+): EstadoPainel {
   const ultimo = ultimoSorteio(sorteios);
   const sorteouNestaAbertura = rodadaAtual > (rodadaBase ?? 0);
   const vigente = sorteouNestaAbertura ? sorteioVigente(sorteios, rodadaAtual) : null;
   if (ultimo && (ultimo.status === "pendente" || ultimo.status === "processando")) {
     return { tipo: "andamento", sorteio: ultimo };
   }
-  if (ultimo && ultimo.status === "erro" && ultimo.rodada > rodadaAtual) {
+  if (ultimo && ultimo.status === "erro" && ultimo.rodada > rodadaAtual && ms(ultimo.criadoEm) >= ms(reabertoEm)) {
     return { tipo: "erro", sorteio: ultimo, concluido: vigente };
   }
   if (sorteouNestaAbertura) return { tipo: "concluido", sorteio: vigente };
@@ -144,6 +150,12 @@ export function paraInputData(d: string | number | null | undefined): string {
 }
 
 export type ReaberturaBruta = { id: string; status: string; erro?: string | null; criadoEm: string | number };
+
+/** Quando foi pedida a última reabertura concluída (`null` se o grupo nunca foi reaberto). */
+export function reabertoEm(reaberturas: ReaberturaBruta[]): string | number | null {
+  const concluidas = reaberturas.filter((r) => r.status === "concluido");
+  return concluidas.sort((a, b) => ms(b.criadoEm) - ms(a.criadoEm))[0]?.criadoEm ?? null;
+}
 
 /** Há um pedido de reabertura esperando o worker (Sortear, Refazer e Reabrir ficam desabilitados). */
 export function reabrindo(reaberturas: ReaberturaBruta[]): boolean {

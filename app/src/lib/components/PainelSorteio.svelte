@@ -11,6 +11,7 @@
 		erroReabertura,
 		estadoPainel,
 		reabrindo as haReaberturaPendente,
+		reabertoEm,
 		type ReaberturaBruta,
 		type SorteioBruto
 	} from '#lib/grupo/consultas.js';
@@ -61,7 +62,7 @@
 		refazerAberto?: boolean;
 	} = $props();
 
-	const estado = $derived(estadoPainel(grupo.rodadaAtual, sorteios, grupo.rodadaBase));
+	const estado = $derived(estadoPainel(grupo.rodadaAtual, sorteios, grupo.rodadaBase, reabertoEm(reaberturas)));
 	/** "Rodada N de 3": conta só as rodadas desde a última abertura. */
 	const nesta = $derived(rodadasNestaAbertura(grupo));
 	const ativos = $derived(contarAtivos(participantes));
@@ -317,7 +318,7 @@
 					{:else}
 						<h3 class="text-lg font-black">Tudo pronto para sortear?</h3>
 						<p class="text-sm text-muted-foreground">
-							O sorteio é feito no servidor e cada pessoa vê só quem tirou. Dá para refazer até {LIMITE_RODADAS} vezes no total.
+							O sorteio é feito no servidor e cada pessoa vê só quem tirou. Cada abertura do grupo tem até {LIMITE_RODADAS} sorteios (o primeiro e até {LIMITE_RODADAS - 1} refeitos).
 						</p>
 					{/if}
 				</div>

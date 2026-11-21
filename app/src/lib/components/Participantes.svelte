@@ -28,7 +28,7 @@
 		souOrganizador,
 		rodadaAtual,
 		rodadaBase = null,
-		status = 'sorteado',
+		status,
 		campoIds,
 		bloqueado = false,
 		aoRemoverAposSorteio
@@ -39,7 +39,7 @@
 		rodadaAtual: number;
 		rodadaBase?: number | null;
 		/** Status do grupo: reaberto (`aberto` com rodada > 0) remove como antes do sorteio. */
-		status?: string;
+		status: string;
 		campoIds: string[];
 		/** Sorteio em andamento ou grupo encerrado: não dá para remover agora. */
 		bloqueado?: boolean;

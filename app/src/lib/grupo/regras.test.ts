@@ -174,10 +174,23 @@ describe("reabrir grupo", () => {
   });
   test("estadoParaParticipante: os 4 casos", () => {
     expect(estadoParaParticipante({ status: "aberto", rodadaAtual: 0 }, false)).toBe("aguardando");
-    expect(estadoParaParticipante({ status: "aberto", rodadaAtual: 1 }, false)).toBe("desfeito");
+    expect(estadoParaParticipante({ status: "aberto", rodadaAtual: 1 }, false, { entrouEm: 1 }, 5)).toBe("desfeito");
     expect(estadoParaParticipante({ status: "sorteado", rodadaAtual: 1 }, true)).toBe("tirou");
     expect(estadoParaParticipante({ status: "sorteado", rodadaAtual: 2 }, false)).toBe("fora");
     expect(estadoParaParticipante({ status: "encerrado", rodadaAtual: 1 }, true)).toBe("tirou");
+  });
+  test("estadoParaParticipante: só quem já estava no grupo vê o sorteio desfeito", () => {
+    const g = { status: "aberto", rodadaAtual: 1 };
+    const reaberto = "2026-11-20T12:00:00.000Z";
+    // Entrou antes da reabertura (mesmo sem ter visto o par): desfeito.
+    expect(estadoParaParticipante(g, false, { entrouEm: "2026-11-19T12:00:00.000Z", viuParNaRodada: null }, reaberto)).toBe("desfeito");
+    // Retardatário (entrou depois de reabrir): aguardando.
+    expect(estadoParaParticipante(g, false, { entrouEm: "2026-11-20T13:00:00.000Z", viuParNaRodada: null }, reaberto)).toBe("aguardando");
+    // Já viu um par: desfeito, mesmo sem a data da reabertura (ex.: apagada pelo organizador).
+    expect(estadoParaParticipante(g, false, { entrouEm: "2026-11-20T13:00:00.000Z", viuParNaRodada: 1 }, null)).toBe("desfeito");
+    // Sem participação e sem reabertura conhecida: aguardando.
+    expect(estadoParaParticipante(g, false, null, null)).toBe("aguardando");
+    expect(estadoParaParticipante(g, false, { entrouEm: 1 }, null)).toBe("aguardando");
   });
   test("o banner de removido some com o grupo reaberto", () => {
     const ps = [p({ removido: true, removidoNaRodada: 1 })];

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { DefCampo } from "@amigo/dominio";
-import { erroReabertura, estadoPainel, reabrindo, paraInputData, respostasVisiveis, usuarioDaChave, type SorteioBruto } from "./consultas";
+import { erroReabertura, estadoPainel, reabertoEm, reabrindo, paraInputData, respostasVisiveis, usuarioDaChave, type SorteioBruto } from "./consultas";
 
 const s = (o: Partial<SorteioBruto> & { rodada: number; status: string; criadoEm: number }): SorteioBruto => ({
   id: `s${o.criadoEm}`,
@@ -19,6 +19,28 @@ describe("estadoPainel", () => {
     expect(e.tipo === "erro" && e.concluido).toBeNull();
     const e2 = estadoPainel(2, [c, s({ rodada: 2, status: "concluido", criadoEm: 2 })], 1);
     expect(e2.tipo === "concluido" && e2.sorteio?.rodada).toBe(2);
+  });
+  test("erro de refazer anterior à última reabertura concluída é ignorado", () => {
+    const c = s({ rodada: 1, status: "concluido", criadoEm: 1 });
+    const erroAntigo = s({ rodada: 2, status: "erro", criadoEm: 2 });
+    // Refazer falhou (rodada 2), depois o grupo foi reaberto (rodadaBase 1) em t=3.
+    expect(estadoPainel(1, [c, erroAntigo], 1, 3).tipo).toBe("nunca");
+    // Sem a data da reabertura, comportamento antigo (erro).
+    expect(estadoPainel(1, [c, erroAntigo], 1).tipo).toBe("erro");
+    // Erro de um sorteio pedido depois de reabrir continua aparecendo.
+    const erroNovo = s({ rodada: 2, status: "erro", criadoEm: 4 });
+    expect(estadoPainel(1, [c, erroAntigo, erroNovo], 1, 3).tipo).toBe("erro");
+  });
+  test("reabertoEm: a última reabertura concluída", () => {
+    expect(reabertoEm([])).toBeNull();
+    expect(
+      reabertoEm([
+        { id: "a", status: "concluido", criadoEm: 1 },
+        { id: "b", status: "concluido", criadoEm: 3 },
+        { id: "c", status: "erro", criadoEm: 5 },
+        { id: "d", status: "pendente", criadoEm: 6 },
+      ]),
+    ).toBe(3);
   });
   test("nunca sorteou", () => {
     expect(estadoPainel(0, []).tipo).toBe("nunca");

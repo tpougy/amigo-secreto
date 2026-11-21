@@ -60,7 +60,9 @@ export const AVISO_DESFEITO = "O sorteio foi desfeito pelo organizador para incl
 
 /**
  * O que o topo da página mostra ao participante:
- * - `desfeito`: o grupo foi reaberto depois de um sorteio (aberto com rodada > 0);
+ * - `desfeito`: o grupo foi reaberto depois de um sorteio (aberto com rodada > 0) e eu já estava
+ *   nele: entrei antes da última reabertura concluída (`reabertoEm`) ou já vi um par
+ *   (`viuParNaRodada`). Quem entrou depois de reabrir (retardatário) vê `aguardando`;
  * - `tirou`: tenho par na rodada atual;
  * - `fora`: grupo sorteado e eu sem par;
  * - `aguardando`: ainda não houve sorteio.
@@ -68,8 +70,15 @@ export const AVISO_DESFEITO = "O sorteio foi desfeito pelo organizador para incl
 export function estadoParaParticipante(
   g: { status: string; rodadaAtual: number },
   temPar: boolean,
+  eu?: { entrouEm?: string | number | Date | null; viuParNaRodada?: number | null } | null,
+  reabertoEm?: string | number | null,
 ): "aguardando" | "desfeito" | "tirou" | "fora" {
-  if (g.status === "aberto" && g.rodadaAtual > 0) return "desfeito";
+  if (g.status === "aberto" && g.rodadaAtual > 0) {
+    const ms = (d: string | number | Date) => new Date(d).getTime();
+    const viu = eu?.viuParNaRodada != null;
+    const entrouAntes = reabertoEm != null && eu?.entrouEm != null && ms(eu.entrouEm) < ms(reabertoEm);
+    return viu || entrouAntes ? "desfeito" : "aguardando";
+  }
   if (temPar) return "tirou";
   if (g.status === "sorteado" && g.rodadaAtual >= 1) return "fora";
   return "aguardando";
