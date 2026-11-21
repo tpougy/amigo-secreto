@@ -46,6 +46,7 @@
 					<CopyIcon /> Copiar URL do MCP
 				</Button>
 			</div>
+			<code class="block w-fit max-w-full overflow-x-auto rounded-md border-2 bg-muted px-3 py-2 text-sm">{URL_MCP}</code>
 			<p class="text-sm text-muted-foreground">
 				Depois clique em Adicionar e entre com a mesma conta Google. No plano gratuito do Claude cabe um conector personalizado.
 			</p>
