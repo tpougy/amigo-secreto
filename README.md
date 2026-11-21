@@ -53,5 +53,5 @@ bun testes/e2e-producao.ts           # verificação em produção (limpa o que 
 
 - **Painel do OpenWorkflow:** `bin/painel` abre um túnel SSH e o navegador em http://localhost:3999.
 - **Logs:** `ssh vps-mercurio 'dokku logs amigo-worker --num 100'` (só ids, contagens e nomes de passo; nunca dados de pessoas).
-- **Login por magic code enquanto o Google não está configurado:** o Instant está com `EMAIL_PROVIDER=log`, então nenhum e-mail é enviado. Peça o código na tela de login e rode `bin/codigo-magico <email>` (lê o log do Instant na VPS e imprime só o código). Equivale a `ssh vps-mercurio 'dokku logs instant --num 100' | grep -i -A2 <email>`.
+- **Login:** em produção só Google (`PUBLIC_LOGIN_GOOGLE=on`, `PUBLIC_LOGIN_MAGIC=off` em `app/.env.production`). Em desenvolvimento, com o magic code ligado, o Instant está com `EMAIL_PROVIDER=log` (nenhum e-mail é enviado): peça o código na tela de login e rode `bin/codigo-magico <email>` (lê o log do Instant na VPS e imprime só o código). Equivale a `ssh vps-mercurio 'dokku logs instant --num 100' | grep -i -A2 <email>`.
 - **Login com Google e MCP:** pendentes; passos em `docs/handoff-google-oauth.md`.

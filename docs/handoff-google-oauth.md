@@ -1,5 +1,7 @@
 # Handoff: Google OAuth, domínio e testes finais
 
+> **Status (2026-11-21):** seções 0 a 4 concluídas — front no Worker com deploy por push, Google configurado no site e no MCP, login com Google validado e magic code desligado em produção. Falta só a seção 5 (testes do MCP e da sessão de 8 dias).
+
 Tudo o que falta para o piloto virar "pronto para gente de fora". Em ordem.
 
 ## 0. Conectar o GitHub ao Worker do front (primeiro, 2 minutos)
