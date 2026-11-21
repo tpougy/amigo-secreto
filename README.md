@@ -6,6 +6,13 @@ Em produção: front em https://amigo.tpou.gy (Worker `amigo-secreto`; reserva h
 
 ## Onde está cada coisa
 
+```
+app/      front (SvelteKit SPA)            pacotes/  código compartilhado (dominio, instant)
+worker/   worker Bun (OpenWorkflow)        infra/    provisionamento e deploy
+mcp/      servidor MCP (Google)            scripts/  ferramentas do dia a dia
+                                           docs/     documentação, specs e achados
+```
+
 Mapa das pastas, comandos do dia a dia, produção e segredos: **`docs/README.md`**.
 
 ## Fluxo

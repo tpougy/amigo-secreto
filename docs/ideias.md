@@ -405,6 +405,8 @@ amigo-secreto/
 
 ## 10. Registro de achados
 
+> Os caminhos citados nesta tabela são os da época de cada achado; a estrutura atual (`pacotes/`, `infra/<sub>/`, `scripts/`) está em `docs/README.md`.
+
 | Data | Área | O que aconteceu | Impacto no Pluto | Ação |
 |---|---|---|---|---|
 | 2026-11-20 | Permissões | `ruleParams.codigo == data.codigo` funciona no instantdb-rust: sem código, ou com código errado, a consulta de `grupos` volta `[]`; com o código certo e **sem** `where`, só aquele grupo aparece. Nenhum participante ou resposta vaza pela prévia | Padrão validado para convites por código (Nutri → paciente) | Coberto por `testes/permissoes.grupos.test.ts` (testes 1–5) |

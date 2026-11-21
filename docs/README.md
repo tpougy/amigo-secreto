@@ -75,7 +75,7 @@ Nenhum valor mora no repositório. O `.env` local não vai para o git.
 
 | Segredo | Onde vive hoje | Guardar |
 |---|---|---|
-| Admin token do Instant, produção | `/root/instant-apps/amigo-secreto.env` na VPS e `.env` local | Bitwarden (obrigatório) |
+| Admin token do Instant, produção | `/root/instant-apps/amigo-secreto.env` na VPS, `.env` local e `dokku config` dos apps `amigo-worker` e `amigo-mcp` (ao trocar o token, atualize todos) | Bitwarden (obrigatório) |
 | Admin token do Instant, teste | `/root/instant-apps/amigo-secreto-teste.env` na VPS e `.env` local | Bitwarden (obrigatório) |
 | Google OAuth do site (client ID e secret) | Registrado no Instant (app de produção) | Bitwarden (obrigatório) |
 | Google OAuth do MCP (client ID e secret) | `dokku config` do `amigo-mcp` | Bitwarden (obrigatório) |
