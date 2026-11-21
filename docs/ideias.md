@@ -382,14 +382,12 @@ Espelha a do Pluto:
 ```
 amigo-secreto/
 ├── app/                  # Svelte SPA + shadcn-svelte + @instantdb/svelte
-├── instant.schema.ts
-├── instant.perms.ts
-├── dominio/              # sortear(), codigo, temas, validação de respostas + testes
+├── pacotes/instant/      # schema.ts, perms.ts e testes de permissão
+├── pacotes/dominio/      # sortear(), codigo, temas, validação de respostas + testes
 ├── worker/               # subscribeQuery → sorteio
 ├── mcp/                  # fastmcp + GoogleProvider
-├── ingestao/             # seed de grupos de teste
-├── testes/
-│   └── permissoes.ts     # suíte asUser por participante
+├── scripts/seed/         # seed de grupos de teste
+├── infra/                # Dokku, Instant, painel, front
 └── dados/                # .gitignore
 ```
 

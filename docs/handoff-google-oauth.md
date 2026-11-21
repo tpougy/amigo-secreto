@@ -11,13 +11,13 @@ O front é o Worker de arquivos estáticos `amigo-secreto` (`wrangler.jsonc` na 
 1. Painel da Cloudflare → Workers & Pages → `amigo-secreto` → Settings → Build → **Connect** → GitHub → repositório `tpougy/amigo-secreto` (autorize o app da Cloudflare só nesse repo).
 2. Configuração do build:
    - Branch de produção: `main`
-   - Diretório raiz: `/` (a raiz do repo; o app importa `instant.schema.ts` e `dominio/`)
+   - Diretório raiz: `/` (a raiz do repo; o app importa `pacotes/instant` e `pacotes/dominio`)
    - Comando de build: `cd app && bun --bun vite build`
    - Comando de deploy: `bunx wrangler deploy`
    - Variável de build: `BUN_VERSION` = `1.4.5`
 3. Salve e dispare um build (ou dê um push na `main`). Confira que termina verde e que o site continua no ar.
 
-As variáveis `PUBLIC_*` do front vêm de `app/.env.production` (versionado; só valores públicos). Deploy manual, se precisar: `infra/front.sh`. As origens autorizadas do Instant já incluem `amigo.tpou.gy`, `amigo-secreto.thomaz-pougy.workers.dev` e `localhost:5173` (`infra/instant-origens.sh`).
+As variáveis `PUBLIC_*` do front vêm de `app/.env.production` (versionado; só valores públicos). Deploy manual, se precisar: `infra/front.sh`. As origens autorizadas do Instant já incluem `amigo.tpou.gy`, `amigo-secreto.thomaz-pougy.workers.dev` e `localhost:5173` (`infra/instant/instant-origens.sh`).
 
 ## 1. Projeto no Google Cloud e tela de consentimento
 
@@ -40,7 +40,7 @@ ssh vps-mercurio 'instant-script create-oauth-client <app_id> google google <cli
 ## 3. Client OAuth do MCP
 
 1. Crie um segundo client, tipo "Aplicativo da Web", com redirecionamento `https://amigo-mcp.app.tpou.gy/oauth/callback`.
-2. Configure no Dokku (as credenciais hoje valem `pendente`). **Atalho:** `infra/google-oauth.sh` faz este passo e o registro do passo 2.4 a partir dos dois JSONs baixados do Google.
+2. Configure no Dokku (as credenciais hoje valem `pendente`). **Atalho:** `infra/instant/google-oauth.sh` faz este passo e o registro do passo 2.4 a partir dos dois JSONs baixados do Google.
 
 ```bash
 ssh vps-mercurio 'dokku config:set amigo-mcp GOOGLE_CLIENT_ID=<id> GOOGLE_CLIENT_SECRET=<secret>'
@@ -66,9 +66,9 @@ git push origin main   # ou: infra/front.sh
 - [ ] MCP no claude.ai (conector `https://amigo-mcp.app.tpou.gy/mcp`): login Google, listar e usar as ferramentas como o seu usuário.
 - [ ] MCP no ChatGPT, mesmo conector.
 - [ ] Sessão do MCP depois de 8 dias (prova o refresh token com a tela publicada).
-- [ ] Depois, registrar o resultado em `discussion/ideias.md` §10 e fechar as perguntas 6 e 8 ("em aberto") nas respostas do piloto.
+- [ ] Depois, registrar o resultado em `docs/ideias.md` §10 e fechar as perguntas 6 e 8 ("em aberto") nas respostas do piloto.
 
 ## Enquanto isso
 
-- Login por magic code: `bin/codigo-magico <email>` (ver README).
-- Painel dos workflows: `bin/painel`.
+- Login por magic code: `scripts/codigo-magico <email>` (ver `docs/README.md`).
+- Painel dos workflows: `scripts/painel`.
