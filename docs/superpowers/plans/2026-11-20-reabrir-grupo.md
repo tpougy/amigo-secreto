@@ -49,7 +49,7 @@
   1. A cria reabertura → `permission-denied`.
   2. O cria reabertura com o grupo `aberto` → `permission-denied`. Mesmo resultado com grupo `encerrado` e com sorteio `pendente` existente.
   3. O cria reabertura com o grupo `sorteado` → ok. A vê a reabertura. Um estranho não vê.
-  4. Ninguém faz `update` ou `delete` de reabertura (nem O) → `permission-denied`.
+  4. Ninguém faz `update` de reabertura (nem O) → `permission-denied`. `delete` só o organizador O (necessário para a cascata ao apagar o grupo); A não apaga → `permission-denied`.
   5. Enquanto a reabertura está `pendente` e o grupo segue `sorteado`, um retardatário R tenta entrar com o código → `permission-denied` (Review Focus 2).
   6. Depois de `simularReabertura`: R entra com o código; A, O e R consultam `pares` → `[]`.
   7. Depois de reabrir com `rodadaAtual = 1`: O pede o sorteio da rodada 2 → ok. Com `rodadaBase = 1`, a rodada 4 é ok e a rodada 5 dá `permission-denied`.

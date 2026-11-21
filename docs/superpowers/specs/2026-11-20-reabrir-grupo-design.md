@@ -38,7 +38,8 @@ Depois do sorteio, alguém descobre que faltou uma pessoa. O organizador **desfa
   - **view:** membros do grupo e o organizador;
   - **create:** só o organizador, com `status == 'pendente'`, grupo `sorteado`, sem sorteio `pendente` ou `processando`, e `rateLimit.reabertura` (5 por hora);
   - **link:** só na criação, pelo organizador do grupo;
-  - **update, delete e unlink:** `false`.
+  - **update e unlink:** `false`;
+  - **delete:** só o organizador (`ehOrganizador`). O servidor checa `delete` também nos filhos apagados em cascata, então sem isso o organizador não apagaria o grupo depois de reabrir; não dá poder novo, porque ele já pode apagar o grupo inteiro. Por isso o worker confere que a reabertura ainda existe antes de marcá-la `concluido`/`erro` (um `update` admin em id apagado recriaria a reabertura como fantasma).
 - `sorteios.create`: troca `data.rodada <= 3` por "rodada − rodadaBase ≤ 3" (sem `rodadaBase`, vale 0).
 
 ## Testes

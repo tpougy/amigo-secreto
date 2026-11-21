@@ -21,8 +21,8 @@ Em produção: front em https://amigo-secreto-hws.pages.dev (o domínio `amigo.t
 ## Fluxo
 
 - O organizador cria o grupo e compartilha o código ou o QR; cada pessoa entra e preenche o perfil.
-- **Sortear** cria um pedido em `sorteios`; o worker grava os pares e cada pessoa vê só quem tirou. Dá para refazer até 3 vezes por abertura.
-- **Reabrir grupo para novos participantes** (aba Sorteio, com o grupo sorteado) cria uma `reaberturas`: o worker apaga os pares, volta o grupo para `aberto` e grava `rodadaBase`, o código volta a aceitar entradas, os participantes veem "O sorteio foi desfeito…" e o organizador sorteia de novo (a contagem "rodada N de 3" recomeça).
+- **Sortear** cria um pedido em `sorteios`; o worker grava os pares e cada pessoa vê só quem tirou. São até 3 sorteios por abertura do grupo (o primeiro e até 2 refeitos).
+- **Reabrir grupo para novos participantes** (aba Sorteio, com o grupo sorteado) cria uma `reaberturas`: o worker apaga os pares, volta o grupo para `aberto` e grava `rodadaBase`, o código volta a aceitar entradas, quem já estava no grupo vê "O sorteio foi desfeito…" e o organizador sorteia de novo (a contagem "rodada N de 3" recomeça).
 
 ## Rodar local
 
