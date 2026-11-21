@@ -1,5 +1,5 @@
 // Schema do Instant (apps `amigo-secreto` e `amigo-secreto-teste`).
-// Aplicado com `infra/instant-push.sh <prod|teste>`.
+// Aplicado com `infra/instant/instant-push.sh <prod|teste>`.
 import { i } from "@instantdb/core";
 
 const _schema = i.schema({

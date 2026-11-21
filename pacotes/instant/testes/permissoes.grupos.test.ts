@@ -1,5 +1,5 @@
 // Suíte de permissões de grupos/campos/participantes/respostas/restrições.
-// Roda contra o app de TESTE (amigo-secreto-teste). Ver instant.perms.ts.
+// Roda contra o app de TESTE (amigo-secreto-teste). Ver pacotes/instant/perms.ts.
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { id } from "@instantdb/admin";
 import { gerarCodigo } from "@amigo/dominio";

@@ -6,14 +6,15 @@ ENV NODE_ENV=production DO_NOT_TRACK=1 OW_DB=/data/ow.db
 
 # Só os manifestos primeiro: a camada de dependências fica em cache entre deploys.
 COPY package.json bun.lock ./
-COPY dominio/package.json dominio/
+COPY pacotes/dominio/package.json pacotes/dominio/
+COPY pacotes/instant/package.json pacotes/instant/
 COPY worker/package.json worker/
-COPY testes/package.json testes/
-COPY painel/package.json painel/
+COPY infra/painel/package.json infra/painel/
 RUN bun install --frozen-lockfile --production --filter amigo-secreto --filter @amigo/worker && rm -rf /root/.bun/install/cache
 
-COPY instant.schema.ts ./
-COPY dominio dominio
+# Do @amigo/instant, só o schema: o kit de teste (@amigo/instant/teste) não entra em produção.
+COPY pacotes/instant/schema.ts pacotes/instant/
+COPY pacotes/dominio pacotes/dominio
 COPY worker worker
 
 USER bun

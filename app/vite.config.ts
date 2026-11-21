@@ -4,7 +4,7 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 import { fileURLToPath } from 'node:url';
 
-// O schema do Instant mora na raiz do monorepo (../instant.schema.ts).
+// O schema do Instant vem do workspace @amigo/instant (pacotes/instant/schema.ts), fora de app/.
 const raiz = fileURLToPath(new URL('..', import.meta.url));
 
 export default defineConfig({

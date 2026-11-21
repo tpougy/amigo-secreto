@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Mostra o último magic code enviado a um e-mail (o Instant está com EMAIL_PROVIDER=log:
-# o código só aparece no log). Uso: bin/codigo-magico <email>   Depois de pedir o código na tela.
+# o código só aparece no log). Uso: scripts/codigo-magico <email>   Depois de pedir o código na tela.
 set -euo pipefail
 email=${1:-}
 [ -n "$email" ] || { echo "uso: $0 <email>" >&2; exit 2; }

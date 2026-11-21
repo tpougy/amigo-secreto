@@ -5,7 +5,7 @@ import {
   PUBLIC_INSTANT_APP_ID,
   PUBLIC_INSTANT_WS_URI,
 } from "$app/env/public";
-import schema from "../../../instant.schema";
+import schema from "@amigo/instant";
 
 export const db = init({
   appId: PUBLIC_INSTANT_APP_ID,

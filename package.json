@@ -3,11 +3,10 @@
   "private": true,
   "packageManager": "bun@1.4.5",
   "workspaces": [
-    "dominio",
-    "ingestao",
+    "pacotes/*",
+    "scripts/seed",
+    "infra/painel",
     "worker",
-    "testes",
-    "painel",
     "mcp",
     "app"
   ],
@@ -16,5 +15,10 @@
   },
   "dependencies": {
     "@instantdb/core": "1.0.67"
+  },
+  "devDependencies": {
+    "@amigo/dominio": "workspace:*",
+    "@amigo/instant": "workspace:*",
+    "@instantdb/admin": "1.0.67"
   }
 }

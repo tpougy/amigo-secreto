@@ -14,7 +14,7 @@ import {
   simularReabertura,
   simularWorker,
   type Usuario,
-} from "../testes/instant-teste";
+} from "@amigo/instant/teste";
 import { atualizarResposta, meuAmigoSecreto, meuPerfil, meusGrupos } from "./ferramentas";
 
 const admin = adminTeste();

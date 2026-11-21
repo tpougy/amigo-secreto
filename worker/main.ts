@@ -4,7 +4,7 @@
 import { init } from "@instantdb/admin";
 import { OpenWorkflow } from "openworkflow";
 import { BackendSqlite } from "openworkflow/sqlite";
-import schema from "../instant.schema";
+import schema from "@amigo/instant";
 import { log } from "./nucleo/log";
 import { validarSegredo } from "./nucleo/seed";
 import { definirApagarConta, processarPedidosExclusao } from "./workflows/apagarConta";

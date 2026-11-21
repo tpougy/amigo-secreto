@@ -1,10 +1,10 @@
 // "1.000 grupos": cria grupos no app de TESTE como admin, com o mesmo `gerarCodigo` e a mesma
 // retentativa (até 5x em `record-not-unique`) da tela de criar, e confere que nenhuma colisão
 // ficou sem tratamento. Também força uma colisão para provar que a retentativa funciona.
-// Uso: bun testes/colisao-codigos.ts [quantidade]   (o Bun carrega o .env da raiz)
+// Uso: bun scripts/colisao-codigos.ts [quantidade]   (o Bun carrega o .env da raiz)
 import { id } from "@instantdb/admin";
 import { gerarCodigo } from "@amigo/dominio";
-import { adminTeste, tipoErro } from "./instant-teste";
+import { adminTeste, tipoErro } from "@amigo/instant/teste";
 
 const N = Number(process.argv[2] ?? 1000);
 const MAX_TENTATIVAS = 5;

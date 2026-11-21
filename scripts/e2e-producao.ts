@@ -1,10 +1,10 @@
 // E2E contra o app Instant de PRODUÇÃO, servido pelo `amigo-worker` no Dokku.
-// Uso (da raiz, que tem o .env): bun testes/e2e-producao.ts  → exit 0 se tudo passar.
+// Uso (da raiz, que tem o .env): bun scripts/e2e-producao.ts  → exit 0 se tudo passar.
 // Tudo o que cria leva o prefixo `e2e-<timestamp>` e é apagado no fim, passe ou falhe.
 // Fluxo: 4 pessoas entram e sorteiam; o organizador reabre o grupo, um retardatário entra pelo
 // código e a rodada 2 é sorteada com os 5.
 import { id, init } from "@instantdb/admin";
-import schema from "../instant.schema";
+import schema from "@amigo/instant";
 import { camposIniciais, formatarCodigo, gerarCodigo, normalizarCodigo } from "@amigo/dominio";
 
 const PRAZO_MS = 60_000;

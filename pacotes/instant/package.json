@@ -1,0 +1,21 @@
+{
+  "name": "@amigo/instant",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./schema.ts",
+    "./perms": "./perms.ts",
+    "./teste": "./testes/instant-teste.ts"
+  },
+  "scripts": {
+    "test": "bun --env-file=../../.env test"
+  },
+  "dependencies": {
+    "@instantdb/admin": "1.0.67",
+    "@instantdb/core": "1.0.67",
+    "@amigo/dominio": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.5"
+  }
+}

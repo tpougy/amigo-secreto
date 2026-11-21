@@ -6,7 +6,7 @@ import { FastMCP, UserError } from "fastmcp";
 import { DiskStore } from "fastmcp/auth";
 import { init } from "@instantdb/admin";
 import { z } from "zod";
-import schema from "../instant.schema";
+import schema from "@amigo/instant";
 import { GoogleComEmail } from "./google";
 import { atualizarResposta, meuAmigoSecreto, meuPerfil, meusGrupos, type Db } from "./ferramentas";
 

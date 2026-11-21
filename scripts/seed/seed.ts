@@ -1,9 +1,9 @@
 // Seed idempotente: cria grupos, participantes e respostas de teste a partir de um JSON.
-// Uso: bun ingestao/seed.ts <arquivo.json> [--app teste|prod]   (padrão: teste)
+// Uso: bun scripts/seed/seed.ts <arquivo.json> [--app teste|prod]   (padrão: teste)
 // Credenciais: .env da raiz (o Bun o carrega). Só ids e contagens vão para o log.
 import { id, init, lookup } from "@instantdb/admin";
 import { camposIniciais, perfilCompleto, validarResposta, type DefCampo } from "@amigo/dominio";
-import schema from "../instant.schema";
+import schema from "@amigo/instant";
 import { lerSeed, type Seed } from "./esquema";
 
 export type Admin = ReturnType<typeof adminDe>;
@@ -126,7 +126,7 @@ if (import.meta.main) {
   const app = i >= 0 ? args[i + 1] : "teste";
   const arquivo = args.find((a, k) => !a.startsWith("--") && (i < 0 || k !== i + 1));
   if (!arquivo || (app !== "teste" && app !== "prod")) {
-    console.error("Uso: bun ingestao/seed.ts <arquivo.json> [--app teste|prod]");
+    console.error("Uso: bun scripts/seed/seed.ts <arquivo.json> [--app teste|prod]");
     process.exit(2);
   }
   try {

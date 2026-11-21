@@ -1,4 +1,4 @@
-# Contexto de build = repositório inteiro (worker/Dockerfile e painel/Dockerfile).
+# Contexto de build = repositório inteiro (worker/Dockerfile, mcp/Dockerfile e infra/painel/Dockerfile).
 **/node_modules
 **/*.test.ts
 .git
@@ -8,8 +8,6 @@
 .changelog
 .superpowers
 docs
-discussion
-spikes
 app/build
 app/.svelte-kit
 dados

@@ -18,7 +18,7 @@ import {
   novoPrefixo,
   simularWorker,
   type Usuario,
-} from "../../testes/instant-teste";
+} from "@amigo/instant/teste";
 import { dispararComRetomada } from "../nucleo/disparar";
 import { definirApagarConta, limparDados, processarPedidosExclusao, specApagarConta } from "./apagarConta";
 import { reabrir } from "./reabrirGrupo";

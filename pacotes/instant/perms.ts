@@ -1,11 +1,11 @@
 // Regras de permissão do Instant (instantdb-rust, ver docs/PARITY.md).
-// Aplicadas com `infra/instant-push.sh <prod|teste>`; testadas em testes/permissoes.*.test.ts.
+// Aplicadas com `infra/instant/instant-push.sh <prod|teste>`; testadas em pacotes/instant/testes/permissoes.*.test.ts.
 //
 // "Membro" de um grupo = usuário ligado a um participante do grupo (ou o organizador).
 // Não-membros só enxergam um grupo (e os campos dele) informando o código certo via
 // `ruleParams.codigo`, o que impede enumerar grupos.
 import type { InstantRules } from "@instantdb/core";
-import type { AppSchema } from "./instant.schema";
+import type { AppSchema } from "./schema";
 
 const rules = {
   $rateLimits: {
@@ -290,7 +290,7 @@ const rules = {
 
   // Conta: o usuário vê só a própria. O servidor recusa regra de `delete` em `$users`
   // ("doesn't support permissions for delete"): apagar a conta exige o admin
-  // (`auth.deleteUser`), ver discussion/ideias.md §10.
+  // (`auth.deleteUser`), ver docs/ideias.md §10.
   $users: {
     allow: {
       view: "auth.id == data.id",

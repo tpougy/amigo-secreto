@@ -19,7 +19,7 @@ import {
   limparTudo,
   novoPrefixo,
   type Usuario,
-} from "../../testes/instant-teste";
+} from "@amigo/instant/teste";
 import {
   carregar,
   definirSorteio,

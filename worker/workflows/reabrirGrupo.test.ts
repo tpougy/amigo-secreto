@@ -19,7 +19,7 @@ import {
   novoPrefixo,
   pedirReabertura,
   type Usuario,
-} from "../../testes/instant-teste";
+} from "@amigo/instant/teste";
 import {
   carregarReabertura,
   definirReabrirGrupo,

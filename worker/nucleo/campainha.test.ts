@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { id } from "@instantdb/admin";
-import { adminTeste } from "../../testes/instant-teste";
+import { adminTeste } from "@amigo/instant/teste";
 import { assinaturaInstant, iniciarCampainha, type Assinatura } from "./campainha";
 
 type Item = { id: string; segredo?: string };

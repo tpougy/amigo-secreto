@@ -1,4 +1,4 @@
-// Ajustes no `GoogleProvider` do fastmcp 4.28.4 (ver discussion/ideias.md §10):
+// Ajustes no `GoogleProvider` do fastmcp 4.28.4 (ver docs/ideias.md §10):
 // 1. Ele declara `GoogleSession.email`, mas nunca o preenche: o `createSession` herdado só copia os
 //    tokens. Aqui o e-mail vem do `id_token` (recebido direto do endpoint de token do Google, por
 //    TLS, então dispensa checar a assinatura — OIDC Core §3.1.3.7) e, se faltar (refresh sem

@@ -1,9 +1,9 @@
 // Utilitários dos testes de integração. Usam SEMPRE o app de teste (amigo-secreto-teste).
 // Credenciais vêm do .env da raiz: o Bun o carrega sozinho quando roda da raiz
-// (`bun test testes/...`); o script `test` deste pacote passa `--env-file=../.env`.
+// (`bun test pacotes/instant/testes/...`); o script `test` deste pacote passa `--env-file=../../.env`.
 import { id, init } from "@instantdb/admin";
 import { init as initCliente } from "@instantdb/core";
-import schema from "../instant.schema";
+import schema from "../schema";
 import { camposIniciais, gerarCodigo, type Par } from "@amigo/dominio";
 
 function exigir(nome: string): string {

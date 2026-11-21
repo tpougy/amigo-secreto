@@ -1,5 +1,5 @@
 // Suíte de permissões de conta ($users), apagar grupo em cascata e query_perms_check.
-// Roda contra o app de TESTE (amigo-secreto-teste). Ver instant.perms.ts.
+// Roda contra o app de TESTE (amigo-secreto-teste). Ver pacotes/instant/perms.ts.
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { id, lookup } from "@instantdb/admin";
 import {

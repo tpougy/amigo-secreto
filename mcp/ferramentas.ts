@@ -13,7 +13,7 @@ import {
   type TipoCampo,
   type ValorResposta,
 } from "@amigo/dominio";
-import type { AppSchema } from "../instant.schema";
+import type { AppSchema } from "@amigo/instant";
 
 export type Db = ReturnType<ReturnType<typeof init<AppSchema>>["asUser"]>;
 

@@ -6,7 +6,7 @@
 import { lookup, type InstantAdminDatabase } from "@instantdb/admin";
 import { defineWorkflowSpec, type OpenWorkflow, type RetryPolicy } from "openworkflow";
 import { ErroSorteio, sortear, type Restricao } from "@amigo/dominio";
-import type { AppSchema } from "../../instant.schema";
+import type { AppSchema } from "@amigo/instant";
 import { assinaturaInstant, iniciarCampainha } from "../nucleo/campainha";
 import { dispararComRetomada } from "../nucleo/disparar";
 import { log } from "../nucleo/log";
