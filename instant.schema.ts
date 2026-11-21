@@ -21,6 +21,9 @@ const _schema = i.schema({
       valorSugerido: i.number().optional(),
       status: i.string().indexed(), // aberto | sorteado | encerrado
       rodadaAtual: i.number(), // começa em 0
+      // rodadaAtual no momento da última reabertura (ausente = 0): o limite de 3 sorteios vale
+      // por abertura (rodada − rodadaBase ≤ 3). Só o worker (admin) grava.
+      rodadaBase: i.number().optional(),
       criadoEm: i.date(),
       // Apelido do organizador, gravado na criação: a prévia e a página mostram "Organizado por".
       organizadorApelido: i.string().optional(),
@@ -65,6 +68,13 @@ const _schema = i.schema({
     pedidosExclusao: i.entity({
       criadoEm: i.date(),
       status: i.string().indexed(), // pendente | concluido
+    }),
+    // Pedido de "reabrir o grupo" (desfazer o sorteio): o organizador cria, o worker (workflow
+    // `reabrir-grupo`) apaga os pares, reabre o grupo e grava `rodadaBase`.
+    reaberturas: i.entity({
+      status: i.string().indexed(), // pendente | concluido | erro
+      erro: i.string().optional(),
+      criadoEm: i.date(),
     }),
   },
   links: {
@@ -125,6 +135,10 @@ const _schema = i.schema({
     pedidoExclusaoUsuario: {
       forward: { on: "pedidosExclusao", has: "one", label: "usuario" },
       reverse: { on: "$users", has: "many", label: "pedidosExclusao" },
+    },
+    reaberturaGrupo: {
+      forward: { on: "reaberturas", has: "one", label: "grupo", onDelete: "cascade" },
+      reverse: { on: "grupos", has: "many", label: "reaberturas" },
     },
     grupoCapa: {
       forward: { on: "grupos", has: "one", label: "capa" },

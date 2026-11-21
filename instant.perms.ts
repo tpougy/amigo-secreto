@@ -17,6 +17,10 @@ const rules = {
     sorteio: {
       limits: [{ capacity: 5, refill: { amount: 5, period: "1 hour", type: "greedy" } }],
     },
+    // Pedidos de reabertura: 5 por hora por usuário (cobra também os negados).
+    reabertura: {
+      limits: [{ capacity: 5, refill: { amount: 5, period: "1 hour", type: "greedy" } }],
+    },
   },
 
   // Cliente não cria atributos novos (schemaless); só o admin/CLI mexe no schema.
@@ -30,9 +34,10 @@ const rules = {
       ehMembro: "auth.id != null && auth.id in data.ref('participantes.usuario.id')",
       temCodigo: "ruleParams.codigo != null && ruleParams.codigo == data.codigo",
       camposProtegidos:
-        "'rodadaAtual' in request.modifiedFields || 'codigo' in request.modifiedFields",
+        "'rodadaAtual' in request.modifiedFields || 'rodadaBase' in request.modifiedFields || 'codigo' in request.modifiedFields",
       statusPermitido: "!('status' in request.modifiedFields) || newData.status == 'encerrado'",
-      criadoAberto: "data.status == 'aberto' && data.rodadaAtual == 0",
+      // `rodadaBase` só o worker grava (um valor alto liberaria rodadas além do limite).
+      criadoAberto: "data.status == 'aberto' && data.rodadaAtual == 0 && data.rodadaBase == null",
     },
     allow: {
       view: "ehOrganizador || ehMembro || temCodigo",
@@ -47,6 +52,7 @@ const rules = {
         campos: "true",
         restricoes: "true",
         sorteios: "true",
+        reaberturas: "true",
         // Capa: só o organizador liga/desliga; o lado do arquivo confere o path (ver $files).
         capa: "ehOrganizador",
       },
@@ -56,6 +62,7 @@ const rules = {
         campos: "true",
         restricoes: "true",
         sorteios: "true",
+        reaberturas: "true",
         capa: "ehOrganizador",
       },
     },
@@ -175,9 +182,12 @@ const rules = {
     bind: {
       ehOrganizador: "auth.id != null && auth.id in data.ref('grupo.organizador.id')",
       ehMembro: "auth.id != null && auth.id in data.ref('grupo.participantes.usuario.id')",
-      // Rodada seguinte à atual, no máximo 3; a chave <grupoId>:<rodada> garante um pedido por rodada.
+      // Rodada seguinte à atual, no máximo 3 por abertura (rodada − rodadaBase ≤ 3, com
+      // rodadaBase ausente = 0: grupos antigos não têm o atributo e o ref volta vazio ou [null]).
+      // Como rodadaBase ≥ 0, `rodada <= 3` já basta quando cabe. A chave <grupoId>:<rodada>
+      // garante um pedido por rodada.
       rodadaValida:
-        "data.rodada <= 3 && (data.rodada - 1) in data.ref('grupo.rodadaAtual')",
+        "(data.rodada <= 3 || data.ref('grupo.rodadaBase').exists(b, b != null && data.rodada - b <= 3)) && (data.rodada - 1) in data.ref('grupo.rodadaAtual')",
       chaveCerta:
         "size(data.ref('grupo.id')) == 1 && data.chave == data.ref('grupo.id')[0] + ':' + string(int(data.rodada))",
       grupoNaoEncerrado: "!('encerrado' in data.ref('grupo.status'))",
@@ -232,6 +242,34 @@ const rules = {
       delete: "organizaPeloPath",
       // Só liga a um grupo o arquivo do path desse grupo (o lado `grupos.capa` exige o organizador).
       link: { grupoCapa: "data.path.startsWith('grupos/' + linkedData.id + '/')" },
+    },
+  },
+
+  // Pedido de reabertura (desfazer o sorteio): só o organizador cria, com o grupo `sorteado` e
+  // sem sorteio em andamento; membros e o organizador veem; o worker (admin) executa e marca
+  // `concluido`/`erro`. Imutável para o cliente (fora a cascata de apagar o grupo).
+  reaberturas: {
+    bind: {
+      ehOrganizador: "auth.id != null && auth.id in data.ref('grupo.organizador.id')",
+      ehMembro: "auth.id != null && auth.id in data.ref('grupo.participantes.usuario.id')",
+      grupoSorteado: "'sorteado' in data.ref('grupo.status')",
+      semSorteioEmAndamento:
+        "!('pendente' in data.ref('grupo.sorteios.status')) && !('processando' in data.ref('grupo.sorteios.status'))",
+    },
+    allow: {
+      view: "ehMembro || ehOrganizador",
+      // rateLimit primeiro: todo pedido (inclusive negado) gasta um token.
+      create:
+        "rateLimit.reabertura.limit(auth.id) && ehOrganizador && data.status == 'pendente' && grupoSorteado && semSorteioEmAndamento",
+      update: "false",
+      // Como em sorteios.delete: o servidor checa `delete` também nos filhos apagados em cascata
+      // (avaliado no estado anterior, com o grupo ainda ligado), então sem isso o organizador não
+      // apaga o grupo depois de reabrir. Não lhe dá poder novo: ele já pode apagar o grupo inteiro.
+      delete: "ehOrganizador",
+      link: {
+        grupo: "actions.data == 'create' && auth.id in linkedData.ref('organizador.id')",
+      },
+      unlink: { grupo: "false" },
     },
   },
 

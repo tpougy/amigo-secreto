@@ -155,6 +155,37 @@ export async function simularWorker(a: Admin, sorteioId: string, pares: Par[]): 
   ]);
 }
 
+/** O organizador pede a reabertura do grupo (como o botão "Reabrir" fará). Devolve o id. */
+export async function pedirReabertura(org: Usuario, grupoId: string): Promise<string> {
+  const reaberturaId = id();
+  await org.db.transact(
+    org.db.tx.reaberturas[reaberturaId]!
+      .create({ status: "pendente", criadoEm: Date.now() })
+      .link({ grupo: grupoId }),
+  );
+  return reaberturaId;
+}
+
+/**
+ * Faz, como admin, o que o workflow `reabrir-grupo` fará: apaga os pares do grupo, grava
+ * `status: "aberto"` e `rodadaBase = rodadaAtual`, e marca as reaberturas pendentes `concluido`.
+ */
+export async function simularReabertura(a: Admin, grupoId: string): Promise<void> {
+  const { grupos, pares } = await a.query({
+    grupos: { $: { where: { id: grupoId } }, reaberturas: {} },
+    pares: { $: { where: { "sorteio.grupo.id": grupoId } } },
+  });
+  const grupo = grupos[0];
+  if (!grupo) throw new Error("grupo não existe");
+  if (pares.length) await a.transact(pares.map((p) => a.tx.pares[p.id]!.delete()));
+  await a.transact([
+    a.tx.grupos[grupoId]!.update({ status: "aberto", rodadaBase: grupo.rodadaAtual }),
+    ...grupo.reaberturas
+      .filter((r) => r.status === "pendente")
+      .map((r) => a.tx.reaberturas[r.id]!.update({ status: "concluido" })),
+  ]);
+}
+
 /** Apaga (via admin) os grupos dos organizadores do prefixo e os usuários do prefixo. */
 export async function limparTudo(prefixo: string): Promise<void> {
   const a = admin();
