@@ -122,11 +122,30 @@ describe("dadosParaPlano + planoApagarConta", () => {
   test("distingue grupo sorteado (anonimizar) e aberto (apagar); o organizado some inteiro", () => {
     const ops = planoApagarConta(dadosParaPlano(dados));
     expect(ops).toEqual([
-      { tipo: "anonimizar", participanteId: "p-eu-1", grupoId: "g1", rodada: 2, respostas: ["r1", "r2"] },
+      { tipo: "anonimizar", participanteId: "p-eu-1", grupoId: "g1", rodada: 2, rodadaBase: 0, respostas: ["r1", "r2"] },
       { tipo: "apagar-participacao", participanteId: "p-eu-2", grupoId: "g2" },
       { tipo: "apagar-grupo", grupoId: "g3" },
       { tipo: "concluir-pedido" },
       { tipo: "apagar-usuario", usuarioId: "u-eu" },
     ]);
+  });
+
+  test("grupo reaberto (aberto, rodada >= 1) apaga a participação; rodadaBase segue para o semRefazer", () => {
+    const g1 = dados.participacoes![0]!;
+    const reaberto: DadosExportacao = {
+      ...dados,
+      participacoes: [{ ...g1, grupo: { ...g1.grupo!, status: "aberto", rodadaAtual: 2, rodadaBase: 2 } }],
+      gruposOrganizados: [],
+    };
+    expect(planoApagarConta(dadosParaPlano(reaberto))[0]).toEqual({
+      tipo: "apagar-participacao",
+      participanteId: "p-eu-1",
+      grupoId: "g1",
+    });
+    const sorteadoDeNovo: DadosExportacao = {
+      ...reaberto,
+      participacoes: [{ ...g1, grupo: { ...g1.grupo!, status: "sorteado", rodadaAtual: 3, rodadaBase: 2 } }],
+    };
+    expect(planoApagarConta(dadosParaPlano(sorteadoDeNovo))[0]).toMatchObject({ tipo: "anonimizar", rodada: 3, rodadaBase: 2 });
   });
 });

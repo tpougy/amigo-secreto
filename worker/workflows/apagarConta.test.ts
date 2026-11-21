@@ -21,6 +21,7 @@ import {
 } from "../../testes/instant-teste";
 import { dispararComRetomada } from "../nucleo/disparar";
 import { definirApagarConta, limparDados, processarPedidosExclusao, specApagarConta } from "./apagarConta";
+import { reabrir } from "./reabrirGrupo";
 import type { AdminDb } from "./sortear";
 
 setDefaultTimeout(60_000);
@@ -105,6 +106,9 @@ describe("workflow apagar-conta", () => {
   let gDeX: string;
   let pX: string; // participação de X no grupo sorteado
   let pXAberto: string;
+  let gReaberto: string;
+  let pXReaberto: string;
+  let rXReaberto: string;
   let pYNoDeX: string;
   let rX: string;
   let rXAberto: string;
@@ -149,6 +153,30 @@ describe("workflow apagar-conta", () => {
       contentType: "image/jpeg",
     });
     await admin.transact(admin.tx.grupos[gDeX]!.link({ capa: up.data.id }));
+
+    // Grupo sorteado e depois reaberto (Z organiza e participa): aberto, rodadaAtual 1, sem pares.
+    const g4 = await criarGrupoTeste(Z, { organizadorParticipa: true });
+    gReaberto = g4.grupoId;
+    pXReaberto = await entrar(X, gReaberto, g4.codigo);
+    const pYReaberto = await entrar(Y, gReaberto, g4.codigo);
+    rXReaberto = await responder(X, pXReaberto, gReaberto);
+    const pZ4 = (await admin.query({ participantes: { $: { where: { chave: `${gReaberto}:${Z.id}` } } } })).participantes[0]!.id;
+    const sorteio4 = id();
+    await Z.db.transact(
+      Z.db.tx.sorteios[sorteio4]!
+        .create({ status: "pendente", rodada: 1, chave: `${gReaberto}:1`, criadoEm: Date.now() })
+        .link({ grupo: gReaberto }),
+    );
+    await simularWorker(admin, sorteio4, [
+      { doador: pZ4, receptor: pXReaberto },
+      { doador: pXReaberto, receptor: pYReaberto },
+      { doador: pYReaberto, receptor: pZ4 },
+    ]);
+    const reab = id();
+    await Z.db.transact(
+      Z.db.tx.reaberturas[reab]!.create({ status: "pendente", criadoEm: Date.now() }).link({ grupo: gReaberto }),
+    );
+    expect(await reabrir(admin, reab)).toEqual({ pares: 3 });
   });
 
   test("pedido de X: anonimiza no sorteado, sai do aberto, apaga o próprio grupo e a conta", async () => {
@@ -162,9 +190,15 @@ describe("workflow apagar-conta", () => {
 
     // Grupo sorteado: participação fica, anonimizada, sem usuário e sem respostas.
     const r = await admin.query({
-      participantes: { $: { where: { id: { $in: [pX, pXAberto, pYNoDeX] } } }, usuario: {}, respostas: {}, doando: {}, recebidoDe: {} },
-      respostas: { $: { where: { id: { $in: [rX, rXAberto] } } } },
-      grupos: { $: { where: { id: { $in: [gSorteado, gAberto, gDeX] } } } },
+      participantes: {
+        $: { where: { id: { $in: [pX, pXAberto, pYNoDeX, pXReaberto] } } },
+        usuario: {},
+        respostas: {},
+        doando: {},
+        recebidoDe: {},
+      },
+      respostas: { $: { where: { id: { $in: [rX, rXAberto, rXReaberto] } } } },
+      grupos: { $: { where: { id: { $in: [gSorteado, gAberto, gDeX, gReaberto] } } } },
       $files: { $: { where: { path: caminhoCapa(gDeX) } } },
     });
     const anon = r.participantes.find((p) => p.id === pX)!;
@@ -176,10 +210,11 @@ describe("workflow apagar-conta", () => {
     // Os pares da rodada continuam (os outros ainda veem quem tiraram).
     expect(anon.doando).toBeTruthy();
     expect(anon.recebidoDe).toBeTruthy();
-    // Grupo aberto: participação apagada; grupo de X: apagado (com a participação de Y e a capa).
+    // Grupo aberto e grupo reaberto (rodada 1, sem pares): participação apagada, não anonimizada;
+    // grupo de X: apagado (com a participação de Y e a capa).
     expect(r.participantes.map((p) => p.id)).toEqual([pX]);
     expect(r.respostas).toEqual([]);
-    expect(r.grupos.map((g) => g.id).sort()).toEqual([gAberto, gSorteado].sort());
+    expect(r.grupos.map((g) => g.id).sort()).toEqual([gAberto, gSorteado, gReaberto].sort());
     expect(r.$files).toEqual([]);
   });
 

@@ -46,7 +46,14 @@ export async function dadosDaConta(db: AdminDb, usuarioId: string): Promise<Dado
     usuarioId,
     participacoes: (u?.participacoes ?? []).flatMap((p) =>
       p.grupo
-        ? [{ participanteId: p.id, grupoId: p.grupo.id, rodadaAtual: p.grupo.rodadaAtual, respostas: p.respostas.map((r) => r.id) }]
+        ? [{
+            participanteId: p.id,
+            grupoId: p.grupo.id,
+            status: p.grupo.status,
+            rodadaAtual: p.grupo.rodadaAtual,
+            rodadaBase: p.grupo.rodadaBase ?? null,
+            respostas: p.respostas.map((r) => r.id),
+          }]
         : [],
     ),
     gruposOrganizados: (u?.gruposOrganizados ?? []).map((g) => g.id),
@@ -56,9 +63,9 @@ export async function dadosDaConta(db: AdminDb, usuarioId: string): Promise<Dado
 /**
  * Passo `limpar-dados`: participações e grupos, numa transação só, a partir do estado ATUAL
  * (idempotente: depois de aplicado, o usuário não tem mais participações nem grupos, e o
- * plano fica vazio). Grupo já sorteado: a participação fica como "Participante removido",
+ * plano fica vazio). Grupo já sorteado (não reaberto): a participação fica como "Participante removido",
  * `removidoNaRodada` = rodada atual (dispara o banner do organizador), sem usuário e sem
- * respostas. Grupo sem sorteio: a participação é apagada. Grupos organizados: apagados, com a capa.
+ * respostas. Grupo sem sorteio ou reaberto: a participação é apagada. Grupos organizados: apagados, com a capa.
  */
 export async function limparDados(db: AdminDb, usuarioId: string) {
   const ops = planoApagarConta(await dadosDaConta(db, usuarioId));

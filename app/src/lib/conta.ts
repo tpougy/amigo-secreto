@@ -34,6 +34,7 @@ type GrupoBruto = {
   titulo: string;
   status: string;
   rodadaAtual: number;
+  rodadaBase?: number | null;
   codigo?: string;
   campos?: CampoBruto[];
 };
@@ -122,7 +123,9 @@ export function dadosParaPlano(d: DadosExportacao): DadosConta {
         ? [{
             participanteId: p.id,
             grupoId: p.grupo.id,
+            status: p.grupo.status,
             rodadaAtual: p.grupo.rodadaAtual,
+            rodadaBase: p.grupo.rodadaBase ?? null,
             respostas: (p.respostas ?? []).map((r) => r.id),
           }]
         : [],
