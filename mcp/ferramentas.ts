@@ -115,7 +115,9 @@ export async function meuAmigoSecreto(db: Db, grupo: string): Promise<AmigoSecre
   if ("erro" in ctx) return ctx;
   // Sorteio em andamento: o par atual está para mudar. Não devolve nem marca `viuParNaRodada`.
   if (ctx.grupo.sorteios.some((s) => s.status === "pendente" || s.status === "processando")) {
-    return { aviso: ctx.grupo.rodadaAtual >= 1 ? AVISO_REFAZENDO : AVISO_SEM_SORTEIO };
+    // Grupo reaberto (`aberto` com rodada >= 1) não tem par a refazer: é um sorteio novo.
+    const refazendo = ctx.grupo.status !== "aberto" && ctx.grupo.rodadaAtual >= 1;
+    return { aviso: refazendo ? AVISO_REFAZENDO : AVISO_SEM_SORTEIO };
   }
   // A regra de `pares` só mostra o par em que o usuário é o doador.
   const { pares } = await db.query({

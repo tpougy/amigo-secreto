@@ -227,5 +227,21 @@ describe("depois de reabrir o grupo", () => {
     const { grupos } = await admin.query({ grupos: { $: { where: { id: grupoId } } } });
     expect(grupos[0]).toMatchObject({ status: "aberto", rodadaAtual: 1, rodadaBase: 1 });
   });
-});
 
+  test("sorteio novo em andamento depois de reabrir: 'ainda não aconteceu', não 'sendo refeito'", async () => {
+    const sorteio2 = id();
+    await admin.transact(
+      admin.tx.sorteios[sorteio2]!
+        .create({ status: "pendente", rodada: 2, chave: `${grupoId}:2`, criadoEm: Date.now() })
+        .link({ grupo: grupoId }),
+    );
+    try {
+      for (const status of ["pendente", "processando"]) {
+        await admin.transact(admin.tx.sorteios[sorteio2]!.update({ status }));
+        expect(await meuAmigoSecreto(A.db, codigo)).toEqual({ aviso: "O sorteio ainda não aconteceu" });
+      }
+    } finally {
+      await admin.transact(admin.tx.sorteios[sorteio2]!.delete());
+    }
+  });
+});
