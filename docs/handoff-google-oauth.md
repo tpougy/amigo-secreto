@@ -38,7 +38,7 @@ ssh vps-mercurio 'instant-script create-oauth-client <app_id> google google <cli
 ## 3. Client OAuth do MCP
 
 1. Crie um segundo client, tipo "Aplicativo da Web", com redirecionamento `https://amigo-mcp.app.tpou.gy/oauth/callback`.
-2. Configure no Dokku (as credenciais hoje valem `pendente`):
+2. Configure no Dokku (as credenciais hoje valem `pendente`). **Atalho:** `infra/google-oauth.sh` faz este passo e o registro do passo 2.4 a partir dos dois JSONs baixados do Google.
 
 ```bash
 ssh vps-mercurio 'dokku config:set amigo-mcp GOOGLE_CLIENT_ID=<id> GOOGLE_CLIENT_SECRET=<secret>'
