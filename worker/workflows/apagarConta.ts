@@ -3,6 +3,7 @@
 // como admin, executa o plano de `planoApagarConta` (@amigo/dominio).
 // Inputs/outputs dos passos ficam no ow.db: só ids e contagens.
 import { lookup, type TransactionChunk } from "@instantdb/admin";
+import { z } from "zod";
 import { defineWorkflowSpec, type OpenWorkflow, type RetryPolicy } from "openworkflow";
 import { APELIDO_REMOVIDO, caminhoCapa, planoApagarConta, resumoPlano, type DadosConta } from "@amigo/dominio";
 import { assinaturaInstant, iniciarCampainha } from "../nucleo/campainha";
@@ -10,11 +11,13 @@ import { dispararComRetomada } from "../nucleo/disparar";
 import { log } from "../nucleo/log";
 import { RETRY_PASSO_PADRAO, type AdminDb } from "./sortear";
 
-export type EntradaConta = { pedidoId: string };
+export const EntradaContaSchema = z.object({ pedidoId: z.uuid() });
+export type EntradaConta = z.infer<typeof EntradaContaSchema>;
 export type SaidaConta = { ignorado: true } | { anonimizadas: number; semRefazer: number; apagadas: number; grupos: number };
 
 export const specApagarConta = defineWorkflowSpec<EntradaConta, SaidaConta>({
   name: "apagar-conta",
+  schema: EntradaContaSchema,
   version: "1",
   retryPolicy: { maximumAttempts: 1 },
 });

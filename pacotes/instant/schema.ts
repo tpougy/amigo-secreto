@@ -1,6 +1,7 @@
 // Schema do Instant (apps `amigo-secreto` e `amigo-secreto-teste`).
 // Aplicado com `infra/instant/instant-push.sh <prod|teste>`.
 import { i } from "@instantdb/core";
+import type { ValorResposta } from "@amigo/dominio";
 
 const _schema = i.schema({
   entities: {
@@ -32,7 +33,7 @@ const _schema = i.schema({
       rotulo: i.string(),
       ajuda: i.string().optional(),
       tipo: i.string(),
-      opcoes: i.json().optional(),
+      opcoes: i.json<string[]>().optional(),
       obrigatorio: i.boolean(),
       ordem: i.number(),
     }),
@@ -47,7 +48,7 @@ const _schema = i.schema({
       chave: i.string().unique(), // <grupoId>:<userId>
     }),
     respostas: i.entity({
-      valor: i.json(),
+      valor: i.json<ValorResposta>(),
       chave: i.string().unique(), // <participanteId>:<campoId>
     }),
     restricoes: i.entity({

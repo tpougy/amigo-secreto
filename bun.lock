@@ -108,6 +108,7 @@
         "@amigo/instant": "workspace:*",
         "@instantdb/admin": "1.0.67",
         "openworkflow": "0.11.0",
+        "zod": "4.6.7",
       },
       "devDependencies": {
         "@types/bun": "1.4.5",

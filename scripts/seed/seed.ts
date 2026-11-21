@@ -92,7 +92,7 @@ export async function semear(db: Admin, seed: Seed): Promise<Resumo> {
       const uid = await usuarioId(db, p.email);
       const chave = `${grupoId}:${uid}`;
       const pid = porChave.get(chave) ?? id();
-      const brutas: Record<string, unknown> = {};
+      const brutas: Record<string, ValorResposta> = {};
       for (const [rotulo, valor] of Object.entries(p.respostas ?? {})) {
         const def = defs.find((d) => d.rotulo === rotulo);
         if (!def) throw new Error(`campo "${rotulo}" não existe no grupo ${g.codigo}`);
@@ -109,7 +109,7 @@ export async function semear(db: Admin, seed: Seed): Promise<Resumo> {
               .link({ grupo: grupoId, usuario: uid }),
         ...Object.entries(brutas).map(([campoId, valor]) =>
           db.tx.respostas[lookup("chave", `${pid}:${campoId}`)]!
-            .update({ valor: valor as never })
+            .update({ valor })
             .link({ participante: pid, campo: campoId }),
         ),
       ]);

@@ -3,17 +3,20 @@
 // `reaberturas` pendente e o worker, como admin, desfaz o sorteio.
 // Inputs/outputs dos passos ficam no ow.db: só ids e contagens. `reaberturas.erro` é visível
 // aos membros do grupo: só as mensagens fixas abaixo.
+import { z } from "zod";
 import { defineWorkflowSpec, type OpenWorkflow, type RetryPolicy } from "openworkflow";
 import { assinaturaInstant, iniciarCampainha } from "../nucleo/campainha";
 import { dispararComRetomada } from "../nucleo/disparar";
 import { log } from "../nucleo/log";
 import { RETRY_PASSO_PADRAO, type AdminDb } from "./sortear";
 
-export type EntradaReabertura = { reaberturaId: string };
+export const EntradaReaberturaSchema = z.object({ reaberturaId: z.uuid() });
+export type EntradaReabertura = z.infer<typeof EntradaReaberturaSchema>;
 export type SaidaReabertura = { ignorado: true } | { pares: number } | { erro: string };
 
 export const specReabrirGrupo = defineWorkflowSpec<EntradaReabertura, SaidaReabertura>({
   name: "reabrir-grupo",
+  schema: EntradaReaberturaSchema,
   version: "1",
   retryPolicy: { maximumAttempts: 1 },
 });

@@ -4,6 +4,7 @@
 // (o sorteio é determinístico pela seed = HMAC(SORTEIO_SEGREDO, sorteioId), ver nucleo/seed.ts),
 // então nunca vão para o ow.db. A seed também não: é recalculada dentro de cada passo.
 import { lookup, type InstantAdminDatabase } from "@instantdb/admin";
+import { z } from "zod";
 import { defineWorkflowSpec, type OpenWorkflow, type RetryPolicy } from "openworkflow";
 import { ErroSorteio, sortear, type Restricao } from "@amigo/dominio";
 import type { AppSchema } from "@amigo/instant";
@@ -15,7 +16,9 @@ import { seedDoSorteio } from "../nucleo/seed";
 
 export type AdminDb = InstantAdminDatabase<AppSchema>;
 
-export type Entrada = { sorteioId: string };
+/** Ids do Instant são UUIDs. */
+export const EntradaSchema = z.object({ sorteioId: z.uuid() });
+export type Entrada = z.infer<typeof EntradaSchema>;
 export type Saida = { pares: number } | { erro: string };
 
 /** O que `carregar` devolve quando há trabalho a fazer (só ids). */
@@ -47,6 +50,7 @@ export const RETRY_PASSO_PADRAO: Partial<RetryPolicy> = {
  */
 export const specSortear = defineWorkflowSpec<Entrada, Saida>({
   name: "sortear",
+  schema: EntradaSchema,
   version: "1",
   retryPolicy: { maximumAttempts: 1 },
 });
