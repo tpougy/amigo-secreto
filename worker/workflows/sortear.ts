@@ -102,9 +102,20 @@ export async function marcarErro(
   return true;
 }
 
+/** Sorteios por abertura do grupo (reabrir grava `rodadaBase = rodadaAtual`). */
+export const LIMITE_RODADAS = 3;
+
+/**
+ * A rodada pedida é a seguinte à atual e cabe no limite da abertura.
+ * `rodadaBase` ausente (grupo de antes de reabrir existir) vale 0.
+ */
+export function rodadaValida(rodada: number, rodadaAtual: number, rodadaBase: number | null | undefined): boolean {
+  return rodada === rodadaAtual + 1 && rodada - (rodadaBase ?? 0) <= LIMITE_RODADAS;
+}
+
 /**
  * Passo `carregar`. Sorteio inexistente ou já terminado → `{ ignorar }` (sem efeitos).
- * Rodada fora de sequência → marca erro e devolve `{ erro }`.
+ * Rodada fora de sequência ou acima do limite da abertura → marca erro e devolve `{ erro }`.
  * Só `status`, `rodada` e os links são lidos do sorteio: `erro`, `criadoEm` e
  * `concluidoEm` vêm do cliente e não são confiáveis.
  */
@@ -126,7 +137,7 @@ export async function carregar(
   if (!s || !g || (s.status !== "pendente" && s.status !== "processando")) return { ignorar: true };
 
   log("sorteio.iniciado", { sorteioId });
-  if (s.rodada !== g.rodadaAtual + 1) {
+  if (!rodadaValida(s.rodada, g.rodadaAtual, g.rodadaBase)) {
     await marcarErro(db, sorteioId, g.id, s.rodada, MSG_RODADA_INVALIDA, "rodada-invalida");
     return { erro: MSG_RODADA_INVALIDA };
   }

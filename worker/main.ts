@@ -8,6 +8,7 @@ import schema from "../instant.schema";
 import { log } from "./nucleo/log";
 import { validarSegredo } from "./nucleo/seed";
 import { definirApagarConta, processarPedidosExclusao } from "./workflows/apagarConta";
+import { definirReabrirGrupo, processarReaberturas } from "./workflows/reabrirGrupo";
 import { definirSorteio, processarPendentes } from "./workflows/sortear";
 
 /** Força uma reassinatura periódica: cobre conexões meio-abertas que nunca dão erro. */
@@ -44,15 +45,17 @@ const backend = BackendSqlite.connect(process.env.OW_DB ?? "/data/ow.db");
 const ow = new OpenWorkflow({ backend });
 definirSorteio(ow, db, { segredo });
 definirApagarConta(ow, db);
+definirReabrirGrupo(ow, db);
 
 const worker = ow.newWorker({ concurrency: concorrencia });
 await worker.start();
 log("worker.iniciado", { concorrencia, pid: process.pid });
 
-// Uma campainha por fila: sorteios pendentes e pedidos de exclusão de conta.
+// Uma campainha por fila: sorteios pendentes, pedidos de exclusão de conta e reaberturas.
 const filas = [
   { nome: "sorteios", abrir: () => processarPendentes(ow, db) },
   { nome: "pedidosExclusao", abrir: () => processarPedidosExclusao(ow, db) },
+  { nome: "reaberturas", abrir: () => processarReaberturas(ow, db) },
 ];
 let campainhas = filas.map((f) => f.abrir());
 const watchdog = setInterval(() => {
