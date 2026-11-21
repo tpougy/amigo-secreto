@@ -191,12 +191,14 @@ const rules = {
       chaveCerta:
         "size(data.ref('grupo.id')) == 1 && data.chave == data.ref('grupo.id')[0] + ':' + string(int(data.rodada))",
       grupoNaoEncerrado: "!('encerrado' in data.ref('grupo.status'))",
+      // Com uma reabertura pendente, o sorteio espera: senão a reabertura apagaria os pares novos.
+      semReaberturaPendente: "!('pendente' in data.ref('grupo.reaberturas.status'))",
     },
     allow: {
       view: "ehMembro || ehOrganizador",
       // rateLimit primeiro: todo pedido (inclusive negado) gasta um token.
       create:
-        "rateLimit.sorteio.limit(auth.id) && ehOrganizador && data.status == 'pendente' && rodadaValida && chaveCerta && grupoNaoEncerrado",
+        "rateLimit.sorteio.limit(auth.id) && ehOrganizador && data.status == 'pendente' && rodadaValida && chaveCerta && grupoNaoEncerrado && semReaberturaPendente",
       // Status, erro, conclusão e pares: só o worker (admin).
       update: "false",
       // O servidor checa `delete` também nos filhos apagados em cascata: sem isso o

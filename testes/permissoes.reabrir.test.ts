@@ -159,6 +159,12 @@ describe("criar reabertura", () => {
   test("5. com a reabertura pendente (grupo ainda sorteado), o retardatário não entra", async () => {
     await esperarTipo(entrar(R, G.grupoId, G.codigo), "permission-denied");
   });
+
+  test("com a reabertura pendente, o organizador não pede sorteio (refazer)", async () => {
+    await esperarTipo(pedirSorteio(O, G.grupoId, 2), "permission-denied");
+    const { sorteios } = await admin.query({ sorteios: { $: { where: { "grupo.id": G.grupoId } } } });
+    expect(sorteios).toHaveLength(1);
+  });
 });
 
 describe("depois de reabrir", () => {

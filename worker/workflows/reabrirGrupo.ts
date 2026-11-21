@@ -50,13 +50,13 @@ function motivoErro(g: { status: string; sorteios: { status: string }[] } | unde
  *   reabertura como fantasma);
  * - grupo inexistente, não `sorteado` ou com sorteio `pendente`/`processando` → marca a
  *   reabertura `erro` (grupo e pares intocados);
- * - senão: apaga todos os pares do grupo, grava `aberto` e `rodadaBase = rodadaAtual` e marca
- *   a reabertura `concluido`.
+ * - senão: apaga todos os pares do grupo, grava `aberto` e `rodadaBase = rodadaAtual`, marca
+ *   a reabertura `concluido` e as outras `pendente` do grupo `erro` ("não está sorteado").
  * Reexecutar é seguro: depois de aplicado, a reabertura já não está `pendente`.
  */
 export async function reabrir(db: AdminDb, reaberturaId: string): Promise<SaidaReabertura> {
   const { reaberturas } = await db.query({
-    reaberturas: { $: { where: { id: reaberturaId } }, grupo: { sorteios: { pares: {} } } },
+    reaberturas: { $: { where: { id: reaberturaId } }, grupo: { sorteios: { pares: {} }, reaberturas: {} } },
   });
   const r = reaberturas[0];
   if (!r || r.status !== "pendente") return { ignorado: true };
@@ -66,17 +66,23 @@ export async function reabrir(db: AdminDb, reaberturaId: string): Promise<SaidaR
   if (falha || !g) {
     const f = falha ?? FALHAS.inexistente;
     await db.transact(db.tx.reaberturas[reaberturaId]!.update({ status: "erro", erro: f.erro }));
-    log("reabertura.erro", { reaberturaId, codigo: f.codigo });
+    log("reabertura.erro", { reaberturaId, grupoId: g?.id ?? "", codigo: f.codigo });
     return { erro: f.erro };
   }
 
   // Uma leitura só: os pares do grupo são os pares de todos os sorteios dele.
   const pares = g.sorteios.flatMap((s) => s.pares);
+  // As outras reaberturas pendentes do grupo (duplo clique) terminam aqui, na mesma transação:
+  // se uma delas ficasse pendente (retry longo) até depois de um sorteio novo, encontraria o
+  // grupo `sorteado` e apagaria os pares novos. Assim, quando o run dela chega, é `ignorado`.
+  const irmas = g.reaberturas.filter((x) => x.id !== reaberturaId && x.status === "pendente");
   await db.transact([
     ...pares.map((p) => db.tx.pares[p.id]!.delete()),
     db.tx.grupos[g.id]!.update({ status: "aberto", rodadaBase: g.rodadaAtual }),
     db.tx.reaberturas[reaberturaId]!.update({ status: "concluido", erro: null }),
+    ...irmas.map((x) => db.tx.reaberturas[x.id]!.update({ status: "erro", erro: MSG_GRUPO_NAO_SORTEADO })),
   ]);
+  for (const x of irmas) log("reabertura.erro", { reaberturaId: x.id, grupoId: g.id, codigo: "grupo-nao-sorteado" });
   log("reabertura.concluida", { reaberturaId, grupoId: g.id, pares: pares.length });
   return { pares: pares.length };
 }

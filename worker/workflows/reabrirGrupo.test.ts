@@ -267,6 +267,28 @@ describe("reabrir-grupo: estado mudou no meio (Review Focus 5)", () => {
     expect(q.reaberturas).toEqual([]);
   });
 
+  test("5f. duplo clique com a 2ª presa: concluir a 1ª encerra a 2ª, que não desfaz o sorteio novo", async () => {
+    const g = await grupoSorteado(3);
+    const [a, b] = [id(), id()];
+    await g.org.db.transact(
+      [a, b].map((r) =>
+        g.org.db.tx.reaberturas[r]!.create({ status: "pendente", criadoEm: Date.now() }).link({ grupo: g.grupoId }),
+      ),
+    );
+    expect(await reabrir(admin, a)).toEqual({ pares: 3 });
+    const rb = (await lerReabertura(b))!;
+    expect(rb.status).toBe("erro");
+    expect(rb.erro).toBe(MSG_GRUPO_NAO_SORTEADO);
+    const s = await esperarSorteio(await pedirSorteio(g, 2));
+    expect(s.status).toBe("concluido");
+    const novos = s.pares.map((p) => p.id).sort();
+    expect(await reabrir(admin, b)).toEqual({ ignorado: true });
+    const h = await amb.wf.run({ reaberturaId: b }, { idempotencyKey: b });
+    expect(await h.result({ timeoutMs: 15_000 })).toEqual({ ignorado: true });
+    expect((await paresDoGrupo(g.grupoId)).map((p) => p.id).sort()).toEqual(novos);
+    expect((await lerGrupo(g.grupoId))!.status).toBe("sorteado");
+  });
+
   test("5b. organizador apaga a reabertura pendente antes do passo: sem fantasma, grupo intocado", async () => {
     const g = await grupoSorteado(3);
     const r = await pedirReabertura(g.org, g.grupoId);
@@ -295,7 +317,13 @@ describe("reabrir-grupo: estado mudou no meio (Review Focus 5)", () => {
     const g = await grupoSorteado(3);
     const r = await pedirReabertura(g.org, g.grupoId);
     desligarCampainhas(); // o sorteio tem de continuar pendente
-    const sorteioId = await pedirSorteio(g, 2); // refazer pedido depois da reabertura
+    // Pedido pelo admin: a regra já recusa o organizador com reabertura pendente.
+    const sorteioId = id();
+    await admin.transact(
+      admin.tx.sorteios[sorteioId]!
+        .create({ status: "pendente", rodada: 2, chave: `${g.grupoId}:2`, criadoEm: Date.now() })
+        .link({ grupo: g.grupoId }),
+    );
     expect(await reabrir(admin, r)).toEqual({ erro: MSG_SORTEIO_EM_ANDAMENTO });
     expect((await lerReabertura(r))!.erro).toBe(MSG_SORTEIO_EM_ANDAMENTO);
     expect(await paresDoGrupo(g.grupoId)).toHaveLength(3);
