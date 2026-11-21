@@ -1,8 +1,8 @@
 # Amigo Secreto
 
-Piloto de amigo secreto para validar a stack do Pluto: InstantDB self-hosted (instantdb-rust), Svelte SPA, worker com OpenWorkflow, servidor MCP com Google e deploy em Dokku e Cloudflare Pages. Tudo em Bun/TypeScript (Bun 1.4.5, nunca Node). A ideia, as telas e o registro de achados estão em `discussion/ideias.md` (o §10 tem os achados e as respostas às 9 perguntas do piloto).
+Piloto de amigo secreto para validar a stack do Pluto: InstantDB self-hosted (instantdb-rust), Svelte SPA, worker com OpenWorkflow, servidor MCP com Google e deploy em Dokku e Cloudflare Workers (arquivos estáticos). Tudo em Bun/TypeScript (Bun 1.4.5, nunca Node). A ideia, as telas e o registro de achados estão em `discussion/ideias.md` (o §10 tem os achados e as respostas às 9 perguntas do piloto).
 
-Em produção: front em https://amigo-secreto-hws.pages.dev (o domínio `amigo.tpou.gy` depende do CNAME descrito em `docs/handoff-google-oauth.md`), MCP em https://amigo-mcp.app.tpou.gy, Instant em https://instant.tpou.gy.
+Em produção: front em https://amigo.tpou.gy (Worker `amigo-secreto`; reserva https://amigo-secreto.thomaz-pougy.workers.dev), MCP em https://amigo-mcp.app.tpou.gy, Instant em https://instant.tpou.gy.
 
 ## Estrutura
 
@@ -14,7 +14,7 @@ Em produção: front em https://amigo-secreto-hws.pages.dev (o domínio `amigo.t
 | `painel/` | Painel do OpenWorkflow (só em `127.0.0.1:3999` na VPS) |
 | `mcp/` | Servidor MCP (fastmcp + Google) que age como o usuário logado |
 | `ingestao/` | Seed idempotente de grupos a partir de JSON |
-| `app/` | SPA SvelteKit (`@instantdb/svelte`), publicada no Cloudflare Pages |
+| `app/` | SPA SvelteKit (`@instantdb/svelte`), publicada num Worker de arquivos estáticos (`wrangler.jsonc` na raiz; deploy automático por push na `main` via Workers Builds) |
 | `testes/` | Permissões (`asUser`), colisão de códigos e o e2e de produção |
 | `infra/`, `bin/` | Scripts de infraestrutura e de operação |
 
@@ -45,7 +45,7 @@ infra/instant-push.sh <prod|teste>   # schema e permissões
 infra/provisionar.sh                 # apps Dokku amigo-worker, amigo-painel e amigo-mcp (idempotente)
 infra/deploy.sh <amigo-worker|amigo-painel|amigo-mcp>
 infra/instant-origens.sh             # origens autorizadas do OAuth no Instant
-infra/pages.sh                       # build do app e deploy no Cloudflare Pages
+infra/front.sh                       # deploy manual do front no Worker (normalmente: push na main)
 bun testes/e2e-producao.ts           # verificação em produção (limpa o que cria)
 ```
 

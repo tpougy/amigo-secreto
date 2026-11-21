@@ -1,0 +1,16 @@
+// Front do amigo-secreto: Worker só com arquivos estáticos (SPA do app/).
+// Build (local ou Workers Builds): `cd app && bun --bun vite build` → app/build.
+// Deploy: `bunx wrangler deploy` na raiz do repo (ou infra/front.sh).
+{
+  "name": "amigo-secreto",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./app/build",
+    // SPA: rota desconhecida devolve o index.html (ex.: F5 em /g/KQ7-M4P).
+    "not_found_handling": "single-page-application"
+  },
+  // Domínio próprio: a Cloudflare cria o registro de DNS e o certificado sozinha.
+  "routes": [{ "pattern": "amigo.tpou.gy", "custom_domain": true }],
+  // Endereço reserva *.workers.dev (também cadastrado como origem no Instant).
+  "workers_dev": true
+}

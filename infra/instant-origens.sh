@@ -19,8 +19,8 @@ set +a
 
 api="${INSTANT_API_URI:-https://instant.tpou.gy}"
 app="$INSTANT_APP_ID"
-# O Pages deu ao projeto o subdomínio amigo-secreto-hws.pages.dev (amigo-secreto.pages.dev é de outra conta).
-origens=(amigo.tpou.gy amigo-secreto-hws.pages.dev localhost:5173)
+# Front no Worker amigo-secreto (wrangler.jsonc): domínio próprio + endereço reserva *.workers.dev.
+origens=(amigo.tpou.gy amigo-secreto.thomaz-pougy.workers.dev localhost:5173)
 
 # O token vai num arquivo de config do curl lido por stdin (não aparece em `ps`).
 chamar() { # chamar <método> <caminho> [corpo]

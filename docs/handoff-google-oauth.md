@@ -2,11 +2,20 @@
 
 Tudo o que falta para o piloto virar "pronto para gente de fora". Em ordem.
 
-## 0. DNS do domínio próprio (primeiro, 1 minuto)
+## 0. Conectar o GitHub ao Worker do front (primeiro, 2 minutos)
 
-O front está no ar em https://amigo-secreto-hws.pages.dev. O domínio `amigo.tpou.gy` já está registrado no projeto do Pages, mas **pendente** ("CNAME record not set"; o token do wrangler não escreve na zona).
+O front é o Worker de arquivos estáticos `amigo-secreto` (`wrangler.jsonc` na raiz), já no ar em https://amigo.tpou.gy (reserva: https://amigo-secreto.thomaz-pougy.workers.dev). O domínio e o DNS foram criados pelo próprio Worker. Falta ligar o deploy automático:
 
-No Cloudflare, zona `tpou.gy`, crie: `CNAME  amigo  →  amigo-secreto-hws.pages.dev` (proxied pode). O Pages valida sozinho; rode `infra/pages.sh` de novo para ver o status. As origens autorizadas do Instant já incluem `amigo.tpou.gy`, `amigo-secreto-hws.pages.dev` e `localhost:5173` (`infra/instant-origens.sh`).
+1. Painel da Cloudflare → Workers & Pages → `amigo-secreto` → Settings → Build → **Connect** → GitHub → repositório `tpougy/amigo-secreto` (autorize o app da Cloudflare só nesse repo).
+2. Configuração do build:
+   - Branch de produção: `main`
+   - Diretório raiz: `/` (a raiz do repo; o app importa `instant.schema.ts` e `dominio/`)
+   - Comando de build: `cd app && bun --bun vite build`
+   - Comando de deploy: `bunx wrangler deploy`
+   - Variável de build: `BUN_VERSION` = `1.4.5`
+3. Salve e dispare um build (ou dê um push na `main`). Confira que termina verde e que o site continua no ar.
+
+As variáveis `PUBLIC_*` do front vêm de `app/.env.production` (versionado; só valores públicos). Deploy manual, se precisar: `infra/front.sh`. As origens autorizadas do Instant já incluem `amigo.tpou.gy`, `amigo-secreto.thomaz-pougy.workers.dev` e `localhost:5173` (`infra/instant-origens.sh`).
 
 ## 1. Projeto no Google Cloud e tela de consentimento
 
@@ -41,12 +50,12 @@ O `config:set` reinicia o app. Confira `curl https://amigo-mcp.app.tpou.gy/healt
 
 Em duas publicações, para nunca ficar sem login:
 
-1. Em `app/.env.production` ponha `PUBLIC_LOGIN_GOOGLE=on` (mantendo o magic code ligado) e publique com `infra/pages.sh`.
+1. Em `app/.env.production` ponha `PUBLIC_LOGIN_GOOGLE=on` (mantendo o magic code ligado) e publique com um push na `main` (Workers Builds) ou `infra/front.sh`.
 2. **Teste o login com Google de ponta a ponta** no site publicado (entrar, criar ou abrir um grupo, sair e entrar de novo), no computador e no celular. Só siga se funcionar.
-3. Então ponha `PUBLIC_LOGIN_MAGIC=off` e publique de novo com `infra/pages.sh`. **Obrigatório antes de convidar gente de fora:** com `EMAIL_PROVIDER=log` o código mágico não chega a ninguém, só aparece no log do Instant, então para usuários reais o login por código não funciona (e só quem tem acesso à VPS conseguiria entrar por ele).
+3. Então ponha `PUBLIC_LOGIN_MAGIC=off` e publique de novo (push na `main` ou `infra/front.sh`). **Obrigatório antes de convidar gente de fora:** com `EMAIL_PROVIDER=log` o código mágico não chega a ninguém, só aparece no log do Instant, então para usuários reais o login por código não funciona (e só quem tem acesso à VPS conseguiria entrar por ele).
 
 ```bash
-infra/pages.sh
+git push origin main   # ou: infra/front.sh
 ```
 
 ## 5. Testes que só você consegue fazer

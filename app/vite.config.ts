@@ -16,7 +16,7 @@ export default defineConfig({
 				runes: ({ filename }) =>
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
-			// SPA puro: toda rota cai no index.html (Cloudflare Pages serve o fallback).
+			// SPA puro: toda rota cai no index.html (o Worker de arquivos estáticos serve o fallback: not_found_handling).
 			adapter: adapter({ fallback: 'index.html' })
 		})
 	],
