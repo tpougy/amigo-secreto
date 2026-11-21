@@ -11,7 +11,7 @@
 # inclusive as cadastradas à mão no painel ou por outro script. Para adicionar uma origem, ponha-a
 # na lista; nunca rode com a lista incompleta.
 set -euo pipefail
-raiz="$(cd "$(dirname "$0")/.." && pwd)"
+raiz="$(cd "$(dirname "$0")/../.." && pwd)"
 set -a
 # shellcheck disable=SC1091
 source "$raiz/.env"

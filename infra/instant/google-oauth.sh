@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Configura o login com Google a partir dos JSONs baixados do Google Cloud (Clientes → Baixar JSON).
 #
-#   infra/google-oauth.sh                              # pede os dois JSONs (cole; nada aparece na tela)
-#   infra/google-oauth.sh --site a.json --mcp b.json   # ou lê de arquivos
+#   infra/instant/google-oauth.sh                              # pede os dois JSONs (cole; nada aparece na tela)
+#   infra/instant/google-oauth.sh --site a.json --mcp b.json   # ou lê de arquivos
 #
 # 1. Client do SITE → app Instant de produção, como client "google" (provider "google"), pela API
 #    /dash com o admin token do .env. Idempotente: se já existe um client "google", ele é trocado.
@@ -11,7 +11,7 @@
 # Rode no SEU terminal (não pelo `!` do Claude Code): os secrets não devem ir para a conversa.
 # Nunca imprime secrets; os valores seguem por stdin (não aparecem em `ps` local).
 set -euo pipefail
-raiz="$(cd "$(dirname "$0")/.." && pwd)"
+raiz="$(cd "$(dirname "$0")/../.." && pwd)"
 set -a
 # shellcheck disable=SC1091
 source "$raiz/.env"

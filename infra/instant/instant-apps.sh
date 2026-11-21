@@ -2,7 +2,7 @@
 # Garante os apps Instant (produção e teste) e grava as credenciais em .env.
 # Idempotente. Não imprime tokens.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 HOST=vps-mercurio
 NOVO=~/pessoal/vps/bin/instant-new-app

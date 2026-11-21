@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Roda a instant-cli contra um app Instant, no diretório atual.
-# Uso: infra/instant-cli.sh <prod|teste> <comando> [args]   (ex.: pull, push)
+# Uso: infra/instant/instant-cli.sh <prod|teste> <comando> [args]   (ex.: pull, push)
 # Lê as credenciais do .env da raiz do repo; nunca imprime tokens.
 set -euo pipefail
-raiz="$(cd "$(dirname "$0")/.." && pwd)"
+raiz="$(cd "$(dirname "$0")/../.." && pwd)"
 
 alvo="${1:-}"
 comando="${2:-}"

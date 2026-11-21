@@ -86,7 +86,8 @@ app_base() {
 volume "$VOL"
 for APP in amigo-worker amigo-painel; do
   echo "== $APP"
-  app_base "$APP" "${APP#amigo-}" "$VOL"
+  case $APP in amigo-painel) dir=infra/painel ;; *) dir=${APP#amigo-} ;; esac
+  app_base "$APP" "$dir" "$VOL"
   if [ "$(rep proxy "$APP" proxy-enabled)" = false ]; then ok "proxy desligado"; else
     dokku proxy:disable "$APP" >/dev/null
     mudou "proxy:disable"
@@ -186,7 +187,7 @@ if [ "$(rep letsencrypt "$MCP" letsencrypt-active)" = true ]; then ok "letsencry
   dokku letsencrypt:enable "$MCP" >/dev/null
   mudou "letsencrypt:enable"
 else
-  echo "  pendente: letsencrypt:enable depois do 1º deploy (infra/deploy.sh $MCP; rode este script de novo)"
+  echo "  pendente: letsencrypt:enable depois do 1º deploy (infra/dokku/deploy.sh $MCP; rode este script de novo)"
 fi
 
 echo "mudanças: $MUDANCAS"

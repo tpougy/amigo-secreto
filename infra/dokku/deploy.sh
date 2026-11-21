@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Deploy de um app Dokku do projeto: infra/deploy.sh <amigo-worker|amigo-painel|amigo-mcp>
+# Deploy de um app Dokku do projeto: infra/dokku/deploy.sh <amigo-worker|amigo-painel|amigo-mcp>
 # Empurra o HEAD local; a branch `main` remota de cada app é só o alvo de deploy.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 app=${1:-}
 case "$app" in
