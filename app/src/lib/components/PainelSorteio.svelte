@@ -1,20 +1,30 @@
 <script lang="ts">
 	// Aba Sorteio do organizador: contagem, data prevista, botão Sortear, status ao vivo do pedido
 	// (pendente → processando → concluído/erro) com a fase do worker por Instant Stream, "Tentar de
-	// novo", refazer e restrições.
+	// novo", refazer, reabrir o grupo para novos participantes e restrições.
 	// Nunca mostra pares: o organizador só enxerga o próprio (regra `pares.view`).
 	import { id } from '@instantdb/core';
 	import { db } from '#lib/instant.js';
 	import { mensagemDeErro } from '#lib/erros.js';
-	import { dataBr, estadoPainel, type SorteioBruto } from '#lib/grupo/consultas.js';
+	import {
+		dataBr,
+		erroReabertura,
+		estadoPainel,
+		reabrindo as haReaberturaPendente,
+		type ReaberturaBruta,
+		type SorteioBruto
+	} from '#lib/grupo/consultas.js';
 	import {
 		bannerRemovidoAposSorteio,
+		confirmacaoReabrir,
 		confirmacaoRefazer,
 		contarAtivos,
 		contarViram,
 		LIMITE_RODADAS,
 		motivoNaoSortear,
-		PALAVRA_REFAZER
+		PALAVRA_REABRIR,
+		PALAVRA_REFAZER,
+		rodadasNestaAbertura
 	} from '#lib/grupo/regras.js';
 	import ConfirmarAcao from '#lib/components/ConfirmarAcao.svelte';
 	import Restricoes, { type RestricaoLista } from '#lib/components/Restricoes.svelte';
@@ -26,32 +36,61 @@
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import LockIcon from '@lucide/svelte/icons/lock';
+	import DoorOpenIcon from '@lucide/svelte/icons/door-open';
 
 	let {
 		grupo,
 		sorteios,
+		reaberturas = [],
 		participantes,
 		restricoes,
 		refazerAberto = $bindable(false)
 	}: {
-		grupo: { id: string; status: string; rodadaAtual: number; dataSorteioPrevista?: string | number | null };
+		grupo: {
+			id: string;
+			status: string;
+			rodadaAtual: number;
+			rodadaBase?: number | null;
+			dataSorteioPrevista?: string | number | null;
+		};
 		sorteios: SorteioBruto[];
+		reaberturas?: ReaberturaBruta[];
 		participantes: ParticipanteLista[];
 		restricoes: RestricaoLista[];
 		/** A página abre o refazer (ex.: logo depois de remover alguém após o sorteio). */
 		refazerAberto?: boolean;
 	} = $props();
 
-	const estado = $derived(estadoPainel(grupo.rodadaAtual, sorteios));
+	const estado = $derived(estadoPainel(grupo.rodadaAtual, sorteios, grupo.rodadaBase));
+	/** "Rodada N de 3": conta só as rodadas desde a última abertura. */
+	const nesta = $derived(rodadasNestaAbertura(grupo));
 	const ativos = $derived(contarAtivos(participantes));
 	const viram = $derived(contarViram(participantes, grupo.rodadaAtual));
 	const encerrado = $derived(grupo.status === 'encerrado');
 	const removidoApos = $derived(bannerRemovidoAposSorteio(grupo.status, grupo.rodadaAtual, participantes));
-	const conf = $derived(
-		confirmacaoRefazer({ rodadaAtual: grupo.rodadaAtual, ativos, viram, removidoAposSorteio: removidoApos })
+	// Reabertura esperando o worker: a regra recusa sorteios novos até ela terminar.
+	const reabrindo = $derived(haReaberturaPendente(reaberturas));
+	const conf = $derived.by(() => {
+		if (reabrindo) return { permitido: false as const, motivo: 'Reabrindo…' };
+		return confirmacaoRefazer({
+			rodadaAtual: grupo.rodadaAtual,
+			rodadaBase: grupo.rodadaBase,
+			ativos,
+			viram,
+			removidoAposSorteio: removidoApos
+		});
+	});
+	const motivoSortear = $derived(reabrindo ? 'Reabrindo…' : motivoNaoSortear(ativos));
+	const temRodada = $derived(nesta < LIMITE_RODADAS);
+	const reaberto = $derived(grupo.status === 'aberto' && grupo.rodadaAtual > 0);
+	// Reabrir: grupo sorteado e nenhum sorteio em andamento (sem limite de rodadas).
+	const podeReabrir = $derived(grupo.status === 'sorteado' && estado.tipo !== 'andamento');
+	const confReabrir = $derived(confirmacaoReabrir({ viram }));
+	const sorteadoEm = $derived(
+		estado.tipo === 'concluido' ? estado.sorteio?.concluidoEm : estado.tipo === 'erro' ? estado.concluido?.concluidoEm : null
 	);
-	const motivoSortear = $derived(motivoNaoSortear(ativos));
-	const temRodada = $derived(grupo.rodadaAtual < LIMITE_RODADAS);
+	const erroReabrir = $derived(erroReabertura(grupo.status, reaberturas, sorteadoEm));
+	let reabrirAberto = $state(false);
 	const restricoesEditaveis = $derived(!encerrado && estado.tipo !== 'andamento' && temRodada);
 	const ativosLista = $derived(participantes.filter((p) => !p.removido).map((p) => ({ id: p.id, apelido: p.apelido })));
 
@@ -101,6 +140,19 @@
 			erroPedido = mensagemPedido(e);
 		} finally {
 			pedindo = false;
+		}
+	}
+
+	/** Pede a reabertura; o worker apaga os pares e devolve o grupo para `aberto`. */
+	async function reabrir() {
+		try {
+			await db.transact(
+				db.tx.reaberturas[id()]!.create({ status: 'pendente', criadoEm: Date.now() }).link({ grupo: grupo.id })
+			);
+		} catch (e) {
+			const tipo = (e as { body?: { type?: string } })?.body?.type;
+			if (tipo === 'rate-limited') throw new Error('Muitos pedidos de reabertura em pouco tempo. Tente de novo mais tarde.');
+			throw new Error(mensagemDeErro(e));
 		}
 	}
 
@@ -169,7 +221,7 @@
 		</div>
 		<div class="rounded-xl border-2 bg-rosa p-2 text-tinta shadow-sm">
 			<dt class="text-[0.65rem] font-black tracking-wider uppercase">Rodada</dt>
-			<dd class="text-2xl font-black" data-testid="rodada">{grupo.rodadaAtual}<span class="text-base">/{LIMITE_RODADAS}</span></dd>
+			<dd class="text-2xl font-black" data-testid="rodada">{nesta}<span class="text-base">/{LIMITE_RODADAS}</span></dd>
 		</div>
 	</dl>
 
@@ -177,7 +229,7 @@
 		{#if estado.tipo === 'andamento'}
 			{@const atual = estado.sorteio.status}
 			<h3 class="text-lg font-black">
-				{grupo.rodadaAtual === 0 ? 'Sorteando...' : `Refazendo o sorteio (rodada ${estado.sorteio.rodada})...`}
+				{nesta === 0 ? 'Sorteando...' : `Refazendo o sorteio (rodada ${nesta + 1})...`}
 			</h3>
 			<ol class="flex items-center gap-2" data-testid="status-sorteio" data-status={atual}>
 				{#each passos as p, i (p)}
@@ -208,7 +260,7 @@
 					</span>
 					<div>
 						<h3 class="text-lg font-black" data-testid="sorteio-feito">
-							Sorteio feito{#if s?.concluidoEm} em {dataBr(s.concluidoEm)}{/if} (rodada {grupo.rodadaAtual} de {LIMITE_RODADAS})
+							Sorteio feito{#if s?.concluidoEm}{' '}em {dataBr(s.concluidoEm)}{/if} (rodada {nesta} de {LIMITE_RODADAS})
 						</h3>
 						<p class="text-sm text-muted-foreground">
 							Os pares são secretos: nem você, como organizador, vê quem tirou quem.
@@ -223,11 +275,11 @@
 					<TriangleAlertIcon class="mt-0.5 shrink-0 text-destructive" />
 					<div class="flex flex-col gap-2">
 						<p class="font-bold" data-testid="erro-sorteio">
-							O sorteio da rodada {estado.sorteio.rodada} falhou: {estado.sorteio.erro ?? 'erro desconhecido'}
+							O sorteio da rodada {nesta + 1} falhou: {estado.sorteio.erro ?? 'erro desconhecido'}
 						</p>
 						{#if encerrado}
 							<p class="text-sm">O grupo está encerrado.</p>
-						{:else if temRodada && grupo.rodadaAtual >= 1}
+						{:else if temRodada && nesta >= 1}
 							<!-- Refazer que falhou: tentar de novo é refazer, com a mesma confirmação. -->
 							<Button
 								class="self-start border-2 font-bold afunda"
@@ -256,10 +308,18 @@
 				</div>
 			{:else if estado.tipo === 'nunca'}
 				<div>
-					<h3 class="text-lg font-black">Tudo pronto para sortear?</h3>
-					<p class="text-sm text-muted-foreground">
-						O sorteio é feito no servidor e cada pessoa vê só quem tirou. Dá para refazer até {LIMITE_RODADAS} vezes no total.
-					</p>
+					{#if reaberto}
+						<h3 class="text-lg font-black" data-testid="grupo-reaberto">Grupo reaberto para novos participantes</h3>
+						<p class="text-sm text-muted-foreground">
+							O sorteio anterior foi desfeito e o código voltou a funcionar. Quando todo mundo tiver entrado, sorteie de
+							novo.
+						</p>
+					{:else}
+						<h3 class="text-lg font-black">Tudo pronto para sortear?</h3>
+						<p class="text-sm text-muted-foreground">
+							O sorteio é feito no servidor e cada pessoa vê só quem tirou. Dá para refazer até {LIMITE_RODADAS} vezes no total.
+						</p>
+					{/if}
 				</div>
 				{#if encerrado}
 					<p class="text-sm font-bold">O grupo está encerrado.</p>
@@ -292,6 +352,24 @@
 					{/if}
 				</div>
 			{/if}
+			{#if podeReabrir}
+				<div class="flex flex-col gap-2 border-t-2 border-dashed pt-3">
+					<Button
+						variant="outline"
+						class="self-start border-2 font-bold afunda"
+						disabled={reabrindo}
+						onclick={() => (reabrirAberto = true)}
+						data-testid="botao-reabrir"
+					>
+						{#if reabrindo}<LoaderIcon class="animate-spin" /> Reabrindo…{:else}<DoorOpenIcon /> Reabrir grupo para novos participantes{/if}
+					</Button>
+					{#if erroReabrir}
+						<p role="alert" class="text-sm font-bold text-destructive" data-testid="erro-reabrir">
+							Não deu para reabrir: {erroReabrir}
+						</p>
+					{/if}
+				</div>
+			{/if}
 			{#if avisoRefazer}<p role="alert" class="text-sm font-bold text-destructive">{avisoRefazer}</p>{/if}
 			{#if erroPedido}<p role="alert" class="text-sm font-bold text-destructive">{erroPedido}</p>{/if}
 		{/if}
@@ -311,7 +389,23 @@
 		aoConfirmar={refazer}
 	>
 		<p class="text-xs text-muted-foreground">
-			Esta será a rodada {grupo.rodadaAtual + 1} de {LIMITE_RODADAS}.
+			Esta será a rodada {nesta + 1} de {LIMITE_RODADAS}.
+		</p>
+	</ConfirmarAcao>
+{/if}
+
+{#if podeReabrir}
+	<ConfirmarAcao
+		bind:aberto={reabrirAberto}
+		titulo="Reabrir grupo para novos participantes"
+		texto={confReabrir.texto}
+		exigir={confReabrir.nivel === 'forte' ? PALAVRA_REABRIR : undefined}
+		rotuloConfirmar="Reabrir grupo"
+		destrutivo={confReabrir.nivel === 'forte'}
+		aoConfirmar={reabrir}
+	>
+		<p class="text-xs text-muted-foreground">
+			O código do grupo volta a funcionar para quem faltou entrar. Depois, é só sortear de novo.
 		</p>
 	</ConfirmarAcao>
 {/if}

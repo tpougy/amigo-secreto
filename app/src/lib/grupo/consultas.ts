@@ -18,6 +18,7 @@ export function consultaGrupo(grupoId: string, usuarioId: string) {
       participantes: {},
       restricoes: { participanteA: {}, participanteB: {} },
       sorteios: {},
+      reaberturas: {},
     },
     participantes: {
       $: { where: { "usuario.id": usuarioId, "grupo.id": grupoId, removido: false } },
@@ -83,16 +84,21 @@ export function sorteioVigente(sorteios: SorteioBruto[], rodadaAtual: number): S
   return sorteios.find((s) => s.status === "concluido" && s.rodada === rodadaAtual) ?? null;
 }
 
-export function estadoPainel(rodadaAtual: number, sorteios: SorteioBruto[]): EstadoPainel {
+/**
+ * Estado do painel do organizador. Depois de reabrir (`rodadaAtual == rodadaBase`), os pares foram
+ * apagados: o sorteio concluído da rodada atual não vale mais e o painel volta a "nunca".
+ */
+export function estadoPainel(rodadaAtual: number, sorteios: SorteioBruto[], rodadaBase?: number | null): EstadoPainel {
   const ultimo = ultimoSorteio(sorteios);
-  const vigente = sorteioVigente(sorteios, rodadaAtual);
+  const sorteouNestaAbertura = rodadaAtual > (rodadaBase ?? 0);
+  const vigente = sorteouNestaAbertura ? sorteioVigente(sorteios, rodadaAtual) : null;
   if (ultimo && (ultimo.status === "pendente" || ultimo.status === "processando")) {
     return { tipo: "andamento", sorteio: ultimo };
   }
   if (ultimo && ultimo.status === "erro" && ultimo.rodada > rodadaAtual) {
     return { tipo: "erro", sorteio: ultimo, concluido: vigente };
   }
-  if (rodadaAtual >= 1) return { tipo: "concluido", sorteio: vigente };
+  if (sorteouNestaAbertura) return { tipo: "concluido", sorteio: vigente };
   return { tipo: "nunca" };
 }
 
@@ -135,6 +141,29 @@ export function paraInputData(d: string | number | null | undefined): string {
     day: "2-digit",
   }).format(new Date(d));
   return p;
+}
+
+export type ReaberturaBruta = { id: string; status: string; erro?: string | null; criadoEm: string | number };
+
+/** Há um pedido de reabertura esperando o worker (Sortear, Refazer e Reabrir ficam desabilitados). */
+export function reabrindo(reaberturas: ReaberturaBruta[]): boolean {
+  return reaberturas.some((r) => r.status === "pendente");
+}
+
+/**
+ * Erro da última reabertura, para mostrar no painel. Só vale com o grupo `sorteado` e se a reabertura
+ * foi pedida depois do sorteio vigente (`sorteadoEm`): um erro de clique duplo ("O grupo não está
+ * sorteado") de antes de um novo sorteio não interessa mais.
+ */
+export function erroReabertura(
+  status: string,
+  reaberturas: ReaberturaBruta[],
+  sorteadoEm?: string | number | null,
+): string | null {
+  if (status !== "sorteado") return null;
+  const ultima = [...reaberturas].sort((a, b) => ms(b.criadoEm) - ms(a.criadoEm))[0];
+  if (ultima?.status !== "erro" || ms(ultima.criadoEm) < ms(sorteadoEm)) return null;
+  return ultima.erro ?? "erro desconhecido";
 }
 
 export const rotuloStatusSorteio: Record<string, string> = {

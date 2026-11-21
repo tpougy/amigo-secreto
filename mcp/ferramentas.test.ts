@@ -10,6 +10,8 @@ import {
   entrar,
   limparTudo,
   novoPrefixo,
+  pedirReabertura,
+  simularReabertura,
   simularWorker,
   type Usuario,
 } from "../testes/instant-teste";
@@ -211,3 +213,19 @@ describe("depois do sorteio", () => {
     expect(await meuAmigoSecreto(B.db, codigo)).toMatchObject({ apelido: apelido(C) });
   });
 });
+
+describe("depois de reabrir o grupo", () => {
+  beforeAll(async () => {
+    await pedirReabertura(O, grupoId);
+    await simularReabertura(admin, grupoId);
+  }, 30_000);
+
+  test("meuAmigoSecreto avisa que o sorteio ainda não aconteceu (não há par)", async () => {
+    for (const u of [O, A, B, C]) {
+      expect(await meuAmigoSecreto(u.db, codigo)).toEqual({ aviso: "O sorteio ainda não aconteceu" });
+    }
+    const { grupos } = await admin.query({ grupos: { $: { where: { id: grupoId } } } });
+    expect(grupos[0]).toMatchObject({ status: "aberto", rodadaAtual: 1, rodadaBase: 1 });
+  });
+});
+

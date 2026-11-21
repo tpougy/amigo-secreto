@@ -8,7 +8,15 @@
 	import { db } from '#lib/instant.js';
 	import { usarSessao } from '#lib/sessao.svelte.js';
 	import { consultaGrupo, dataBr, emAndamento, paraDefCampos } from '#lib/grupo/consultas.js';
-	import { bannerRemovidoAposSorteio, foraDoSorteio, LIMITE_RODADAS, textoBannerRemovido } from '#lib/grupo/regras.js';
+	import {
+		AVISO_DESFEITO,
+		bannerRemovidoAposSorteio,
+		estadoParaParticipante,
+		foraDoSorteio,
+		LIMITE_RODADAS,
+		rodadasNestaAbertura,
+		textoBannerRemovido
+	} from '#lib/grupo/regras.js';
 	import Participantes from '#lib/components/Participantes.svelte';
 	import PainelSorteio from '#lib/components/PainelSorteio.svelte';
 	import VoceTirou from '#lib/components/VoceTirou.svelte';
@@ -42,9 +50,11 @@
 	const participantes = $derived(grupo?.participantes ?? []);
 	const sorteios = $derived(grupo?.sorteios ?? []);
 	const restricoes = $derived(grupo?.restricoes ?? []);
+	const reaberturas = $derived(grupo?.reaberturas ?? []);
 	const andamento = $derived(emAndamento(sorteios));
 	const encerrado = $derived(grupo?.status === 'encerrado');
-	const sorteado = $derived((grupo?.rodadaAtual ?? 0) >= 1);
+	// Já houve sorteio e ele vale (reabrir devolve o grupo a `aberto` e apaga os pares).
+	const sorteado = $derived((grupo?.rodadaAtual ?? 0) >= 1 && grupo?.status !== 'aberto');
 	const banner = $derived(
 		souOrganizador && !!grupo && bannerRemovidoAposSorteio(grupo.status, grupo.rodadaAtual, participantes)
 	);
@@ -63,6 +73,8 @@
 				andamento
 			})
 	);
+	// Grupo reaberto: o sorteio anterior foi desfeito e o novo ainda não saiu.
+	const desfeito = $derived(!!grupo && estadoParaParticipante(grupo, !!meuPar) === 'desfeito');
 	const minhasRespostas = $derived(
 		(eu?.respostas ?? []).flatMap((r) => (r.campo ? [{ id: r.id, campoId: r.campo.id, valor: r.valor }] : []))
 	);
@@ -79,7 +91,7 @@
 
 	// Sair do grupo: só antes do sorteio (a regra também exige o grupo aberto). Apaga a própria
 	// participação; respostas e restrições vão em cascata, e dá para voltar com o código.
-	const podeSair = $derived(!!grupo && grupo.status === 'aberto' && grupo.rodadaAtual === 0 && !andamento);
+	const podeSair = $derived(!!grupo && grupo.status === 'aberto' && !andamento);
 	let sairAberto = $state(false);
 	async function sairDoGrupo() {
 		if (!eu) return;
@@ -129,8 +141,8 @@
 		{#if banner}
 			<div class="flex flex-col gap-3 rounded-xl border-2 bg-amber-200 p-4 text-tinta shadow-md sm:flex-row sm:items-center" role="alert" data-testid="banner-removido">
 				<TriangleAlertIcon class="size-6 shrink-0" />
-				<p class="flex-1 font-bold">{textoBannerRemovido(grupo.rodadaAtual)}</p>
-				{#if grupo.rodadaAtual < LIMITE_RODADAS}
+				<p class="flex-1 font-bold">{textoBannerRemovido(grupo.rodadaAtual, grupo.rodadaBase)}</p>
+				{#if rodadasNestaAbertura(grupo) < LIMITE_RODADAS}
 					<Button class="shrink-0 border-2 font-bold afunda" onclick={irParaRefazer}>Refazer sorteio</Button>
 				{/if}
 			</div>
@@ -164,6 +176,11 @@
 				<TriangleAlertIcon class="size-6 shrink-0" />
 				<p class="font-bold">Você não está neste sorteio. Peça ao organizador para refazer.</p>
 			</div>
+		{:else if eu && desfeito && !andamento && !souOrganizador}
+			<div class="flex items-center gap-3 rounded-2xl border-2 bg-amber-200 p-4 text-tinta shadow-md" role="status" data-testid="sorteio-desfeito">
+				<TriangleAlertIcon class="size-6 shrink-0" />
+				<p class="font-bold">{AVISO_DESFEITO}</p>
+			</div>
 		{:else if eu && !sorteado && !souOrganizador}
 			<div class="flex items-center gap-3 rounded-2xl border-2 bg-primary p-4 shadow-md" data-testid="aguardando">
 				<HourglassIcon class="size-7 shrink-0" />
@@ -191,6 +208,8 @@
 						meuParticipanteId={eu?.id ?? null}
 						souOrganizador
 						rodadaAtual={grupo.rodadaAtual}
+						rodadaBase={grupo.rodadaBase}
+						status={grupo.status}
 						campoIds={campos.map((c) => c.id)}
 						bloqueado={andamento || encerrado}
 						aoRemoverAposSorteio={irParaRefazer}
@@ -200,7 +219,7 @@
 					{@render meuPerfil()}
 				</Tabs.Content>
 				<Tabs.Content value="sorteio">
-					<PainelSorteio {grupo} {sorteios} {participantes} {restricoes} bind:refazerAberto />
+					<PainelSorteio {grupo} {sorteios} {reaberturas} {participantes} {restricoes} bind:refazerAberto />
 				</Tabs.Content>
 				<Tabs.Content value="configuracoes">
 					<ConfiguracoesGrupo {grupo} campos={grupo.campos ?? []} />

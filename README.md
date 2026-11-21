@@ -10,13 +10,19 @@ Em produção: front em https://amigo-secreto-hws.pages.dev (o domínio `amigo.t
 |---|---|
 | `instant.schema.ts`, `instant.perms.ts` | Schema e regras de permissão do Instant (fonte da verdade) |
 | `dominio/` | Lógica pura: código do grupo, sorteio, campos de perfil, validação de respostas |
-| `worker/` | Assina `sorteios` e `pedidosExclusao` no Instant e roda os workflows (OpenWorkflow) |
+| `worker/` | Assina `sorteios`, `pedidosExclusao` e `reaberturas` no Instant e roda os workflows (OpenWorkflow) |
 | `painel/` | Painel do OpenWorkflow (só em `127.0.0.1:3999` na VPS) |
 | `mcp/` | Servidor MCP (fastmcp + Google) que age como o usuário logado |
 | `ingestao/` | Seed idempotente de grupos a partir de JSON |
 | `app/` | SPA SvelteKit (`@instantdb/svelte`), publicada no Cloudflare Pages |
 | `testes/` | Permissões (`asUser`), colisão de códigos e o e2e de produção |
 | `infra/`, `bin/` | Scripts de infraestrutura e de operação |
+
+## Fluxo
+
+- O organizador cria o grupo e compartilha o código ou o QR; cada pessoa entra e preenche o perfil.
+- **Sortear** cria um pedido em `sorteios`; o worker grava os pares e cada pessoa vê só quem tirou. Dá para refazer até 3 vezes por abertura.
+- **Reabrir grupo para novos participantes** (aba Sorteio, com o grupo sorteado) cria uma `reaberturas`: o worker apaga os pares, volta o grupo para `aberto` e grava `rodadaBase`, o código volta a aceitar entradas, os participantes veem "O sorteio foi desfeito…" e o organizador sorteia de novo (a contagem "rodada N de 3" recomeça).
 
 ## Rodar local
 

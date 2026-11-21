@@ -27,6 +27,8 @@
 		meuParticipanteId,
 		souOrganizador,
 		rodadaAtual,
+		rodadaBase = null,
+		status = 'sorteado',
 		campoIds,
 		bloqueado = false,
 		aoRemoverAposSorteio
@@ -35,6 +37,9 @@
 		meuParticipanteId: string | null;
 		souOrganizador: boolean;
 		rodadaAtual: number;
+		rodadaBase?: number | null;
+		/** Status do grupo: reaberto (`aberto` com rodada > 0) remove como antes do sorteio. */
+		status?: string;
 		campoIds: string[];
 		/** Sorteio em andamento ou grupo encerrado: não dá para remover agora. */
 		bloqueado?: boolean;
@@ -48,7 +53,8 @@
 	);
 	const ativos = $derived(participantes.filter((p) => !p.removido).length);
 	const completos = $derived(participantes.filter((p) => !p.removido && p.perfilCompleto).length);
-	const depoisDoSorteio = $derived(rodadaAtual >= 1);
+	// Com o grupo reaberto não há pares: remover é apagar, como antes do sorteio.
+	const depoisDoSorteio = $derived(rodadaAtual >= 1 && status !== 'aberto');
 
 	let alvo = $state<ParticipanteLista | null>(null);
 	let confirmando = $state(false);
@@ -133,7 +139,7 @@
 <ConfirmarAcao
 	bind:aberto={confirmando}
 	titulo={alvo ? `Remover ${alvo.apelido}?` : 'Remover participante?'}
-	texto={textoRemocao(rodadaAtual)}
+	texto={textoRemocao(rodadaAtual, rodadaBase, status)}
 	rotuloConfirmar="Remover"
 	destrutivo
 	aoConfirmar={remover}

@@ -1,12 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import {
   bannerRemovidoAposSorteio,
+  confirmacaoReabrir,
   confirmacaoRefazer,
+  estadoParaParticipante,
   contarAtivos,
   contarViram,
   foraDoSorteio,
   LIMITE_RODADAS,
   motivoNaoSortear,
+  rodadasNestaAbertura,
   textoBannerRemovido,
   textoRemocao,
 } from "./regras";
@@ -135,5 +138,57 @@ describe("foraDoSorteio", () => {
     expect(foraDoSorteio({ ...base, status: "aberto", rodadaAtual: 0 })).toBe(false);
     expect(foraDoSorteio({ ...base, status: "encerrado" })).toBe(false);
     expect(foraDoSorteio({ ...base, andamento: true })).toBe(false);
+  });
+});
+
+describe("reabrir grupo", () => {
+  test("confirmacaoReabrir: ninguém viu = simples", () => {
+    expect(confirmacaoReabrir({ viram: 0 })).toEqual({
+      nivel: "simples",
+      texto: "Reabrir desfaz o sorteio. Ninguém viu o resultado ainda.",
+    });
+  });
+  test("confirmacaoReabrir: alguém viu = forte", () => {
+    expect(confirmacaoReabrir({ viram: 2 })).toEqual({
+      nivel: "forte",
+      texto: "2 pessoa(s) já viram quem tiraram. Reabrir desfaz o sorteio de todos.",
+    });
+  });
+  test("rodadasNestaAbertura: rodadaBase ausente vale 0", () => {
+    expect(rodadasNestaAbertura({ rodadaAtual: 2 })).toBe(2);
+    expect(rodadasNestaAbertura({ rodadaAtual: 2, rodadaBase: null })).toBe(2);
+    expect(rodadasNestaAbertura({ rodadaAtual: 2, rodadaBase: 0 })).toBe(2);
+    expect(rodadasNestaAbertura({ rodadaAtual: 4, rodadaBase: 3 })).toBe(1);
+    expect(rodadasNestaAbertura({ rodadaAtual: 3, rodadaBase: 3 })).toBe(0);
+  });
+  test("confirmacaoRefazer conta o limite por abertura", () => {
+    expect(confirmacaoRefazer({ rodadaAtual: 4, rodadaBase: 3, ativos: 5, viram: 0, removidoAposSorteio: false })).toEqual({
+      permitido: true,
+      nivel: "simples",
+      texto: "Refazer o sorteio? Ninguém viu o resultado ainda.",
+    });
+    expect(confirmacaoRefazer({ rodadaAtual: 6, rodadaBase: 3, ativos: 5, viram: 0, removidoAposSorteio: false })).toEqual({
+      permitido: false,
+      motivo: "Limite de 3 sorteios atingido",
+    });
+  });
+  test("estadoParaParticipante: os 4 casos", () => {
+    expect(estadoParaParticipante({ status: "aberto", rodadaAtual: 0 }, false)).toBe("aguardando");
+    expect(estadoParaParticipante({ status: "aberto", rodadaAtual: 1 }, false)).toBe("desfeito");
+    expect(estadoParaParticipante({ status: "sorteado", rodadaAtual: 1 }, true)).toBe("tirou");
+    expect(estadoParaParticipante({ status: "sorteado", rodadaAtual: 2 }, false)).toBe("fora");
+    expect(estadoParaParticipante({ status: "encerrado", rodadaAtual: 1 }, true)).toBe("tirou");
+  });
+  test("o banner de removido some com o grupo reaberto", () => {
+    const ps = [p({ removido: true, removidoNaRodada: 1 })];
+    expect(bannerRemovidoAposSorteio("sorteado", 1, ps)).toBe(true);
+    expect(bannerRemovidoAposSorteio("aberto", 1, ps)).toBe(false);
+  });
+  test("textos de remoção e banner contam rodadas por abertura", () => {
+    expect(textoRemocao(1, 0, "aberto")).toBe("A pessoa sai do grupo e as respostas do perfil dela são apagadas.");
+    expect(textoRemocao(4, 3, "sorteado")).toContain("exige refazer o sorteio");
+    expect(textoRemocao(6, 3, "sorteado")).toContain("limite de 3 sorteios");
+    expect(textoBannerRemovido(4, 3)).toContain("Refaça o sorteio");
+    expect(textoBannerRemovido(6, 3)).not.toContain("Refaça");
   });
 });
