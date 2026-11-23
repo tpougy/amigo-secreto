@@ -141,9 +141,13 @@ const rules = {
         "size(data.ref('participante.id')) == 1 && size(data.ref('campo.id')) == 1 && data.chave == data.ref('participante.id')[0] + ':' + data.ref('campo.id')[0]",
       campoDoMesmoGrupo:
         "size(data.ref('campo.grupo.id')) == 1 && data.ref('campo.grupo.id')[0] in data.ref('participante.grupo.id')",
+      // Membro ativo do mesmo grupo (removido depois do sorteio está desligado do usuário).
+      ehMembro: "auth.id != null && auth.id in data.ref('participante.grupo.participantes.usuario.id')",
+      // Opção do organizador: membros veem os perfis uns dos outros.
+      perfisVisiveis: "true in data.ref('participante.grupo.perfisVisiveis')",
     },
     allow: {
-      view: "ehDono || tirouODono",
+      view: "ehDono || tirouODono || ((ehMembro || ehOrganizador) && perfisVisiveis)",
       create: "ehDono && chaveCerta && campoDoMesmoGrupo",
       update: "ehDono && request.modifiedFields.all(f, f == 'valor')",
       delete: "ehDono || ehOrganizador",

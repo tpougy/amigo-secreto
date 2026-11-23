@@ -28,6 +28,8 @@ const _schema = i.schema({
       criadoEm: i.date(),
       // Apelido do organizador, gravado na criação: a prévia e a página mostram "Organizado por".
       organizadorApelido: i.string().optional(),
+      // Ligado pelo organizador: membros veem as respostas uns dos outros (ausente = desligado).
+      perfisVisiveis: i.boolean().optional(),
     }),
     campos: i.entity({
       rotulo: i.string(),
