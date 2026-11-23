@@ -19,6 +19,8 @@
 	import { usuarioDaChave } from '#lib/grupo/consultas.js';
 	import { textoRemocao } from '#lib/grupo/regras.js';
 	import ConfirmarAcao from '#lib/components/ConfirmarAcao.svelte';
+	import PerfilParticipante from '#lib/components/PerfilParticipante.svelte';
+	import type { DefCampo } from '@amigo/dominio';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import UserMinusIcon from '@lucide/svelte/icons/user-minus';
 
@@ -31,6 +33,8 @@
 		status,
 		campoIds,
 		bloqueado = false,
+		perfisVisiveis = false,
+		campos = [],
 		aoRemoverAposSorteio
 	}: {
 		participantes: ParticipanteLista[];
@@ -43,6 +47,9 @@
 		campoIds: string[];
 		/** Sorteio em andamento ou grupo encerrado: não dá para remover agora. */
 		bloqueado?: boolean;
+		/** Opção do organizador: os nomes ativos abrem o perfil num diálogo. */
+		perfisVisiveis?: boolean;
+		campos?: DefCampo[];
 		aoRemoverAposSorteio?: () => void;
 	} = $props();
 
@@ -55,6 +62,14 @@
 	const completos = $derived(participantes.filter((p) => !p.removido && p.perfilCompleto).length);
 	// Com o grupo reaberto não há pares: remover é apagar, como antes do sorteio.
 	const depoisDoSorteio = $derived(rodadaAtual >= 1 && status !== 'aberto');
+
+	let vendo = $state<ParticipanteLista | null>(null);
+	let vendoAberto = $state(false);
+
+	function verPerfil(p: ParticipanteLista) {
+		vendo = p;
+		vendoAberto = true;
+	}
 
 	let alvo = $state<ParticipanteLista | null>(null);
 	let confirmando = $state(false);
@@ -100,9 +115,24 @@
 					aria-hidden="true">{p.apelido.slice(0, 1)}</span
 				>
 				<div class="flex min-w-0 flex-1 flex-col">
-					<span class="truncate font-bold {p.removido ? 'line-through' : ''}">
+					{#snippet nome()}
 						{p.apelido}{#if p.id === meuParticipanteId}<span class="font-semibold text-muted-foreground"> (você)</span>{/if}
-					</span>
+					{/snippet}
+					{#if perfisVisiveis && !p.removido}
+						<button
+							type="button"
+							class="w-fit max-w-full truncate text-left font-bold underline decoration-2 underline-offset-2 hover:decoration-primary"
+							aria-label="Ver o perfil de {p.apelido}"
+							data-testid="ver-perfil"
+							onclick={() => verPerfil(p)}
+						>
+							{@render nome()}
+						</button>
+					{:else}
+						<span class="truncate font-bold {p.removido ? 'line-through' : ''}">
+							{@render nome()}
+						</span>
+					{/if}
 					<div class="flex flex-wrap gap-1.5">
 						{#if p.removido}
 							<span class="rounded-sm border-2 bg-neutral-300 px-1.5 text-[0.65rem] font-bold text-neutral-700 uppercase">
@@ -135,6 +165,8 @@
 		{/each}
 	</ul>
 </div>
+
+<PerfilParticipante bind:aberto={vendoAberto} participante={vendo} {campos} />
 
 <ConfirmarAcao
 	bind:aberto={confirmando}

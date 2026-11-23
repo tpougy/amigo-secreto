@@ -6,6 +6,7 @@
 	import type { DefCampo } from '@amigo/dominio';
 	import { db } from '#lib/instant.js';
 	import { respostasVisiveis, type RespostaBruta } from '#lib/grupo/consultas.js';
+	import RespostasPerfil from '#lib/components/RespostasPerfil.svelte';
 	import GiftIcon from '@lucide/svelte/icons/gift';
 	import SparklesIcon from '@lucide/svelte/icons/sparkles';
 
@@ -104,24 +105,7 @@
 					{receptor.apelido} ainda não preencheu o perfil. Volte mais tarde para ver as dicas.
 				</p>
 			{:else}
-				<dl class="grid gap-3 sm:grid-cols-2">
-					{#each respostas as r (r.campo.id)}
-						<div class="rounded-xl border-2 bg-background p-3 shadow-sm">
-							<dt class="text-xs font-black tracking-wider text-muted-foreground uppercase">{r.campo.rotulo}</dt>
-							<dd class="mt-1">
-								{#if Array.isArray(r.valor)}
-									<ul class="flex flex-wrap gap-1.5">
-										{#each r.valor as v, k (k)}
-											<li class="rounded-md border-2 bg-ceu px-2 py-0.5 text-sm font-bold text-tinta">{v}</li>
-										{/each}
-									</ul>
-								{:else}
-									<p class="font-semibold whitespace-pre-line break-words">{r.valor}</p>
-								{/if}
-							</dd>
-						</div>
-					{/each}
-				</dl>
+				<RespostasPerfil {respostas} />
 			{/if}
 		</div>
 	{/if}

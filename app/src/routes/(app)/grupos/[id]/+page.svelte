@@ -215,6 +215,8 @@
 						status={grupo.status}
 						campoIds={campos.map((c) => c.id)}
 						bloqueado={andamento || encerrado}
+						perfisVisiveis={!!grupo.perfisVisiveis}
+						{campos}
 						aoRemoverAposSorteio={irParaRefazer}
 					/>
 				</Tabs.Content>
@@ -240,6 +242,8 @@
 					rodadaBase={grupo.rodadaBase}
 					status={grupo.status}
 					campoIds={[]}
+					perfisVisiveis={!!grupo.perfisVisiveis}
+					{campos}
 				/>
 			</section>
 			<section class="flex flex-col gap-3">

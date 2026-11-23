@@ -22,6 +22,7 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
+	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { toast } from 'svelte-sonner';
 	import LoaderIcon from '@lucide/svelte/icons/loader-circle';
 	import ArchiveIcon from '@lucide/svelte/icons/archive';
@@ -38,6 +39,7 @@
 		dataEvento?: string | number | null;
 		valorSugerido?: number | null;
 		capa?: unknown;
+		perfisVisiveis?: boolean | null;
 	};
 
 	let { grupo, campos }: { grupo: Grupo; campos: CampoBruto[] } = $props();
@@ -73,6 +75,21 @@
 	async function removerCapa() {
 		await db.transact(db.tx.$files[lookup('path', caminhoCapa(grupo.id))]!.delete());
 		toast.success('Capa removida');
+	}
+
+	// ---------- Perfis visíveis ----------
+	let salvandoPerfis = $state(false);
+
+	async function mudarPerfisVisiveis(v: boolean) {
+		salvandoPerfis = true;
+		try {
+			await db.transact(db.tx.grupos[grupo.id]!.update({ perfisVisiveis: v }));
+			toast.success(v ? 'Perfis visíveis para os participantes' : 'Perfis ocultos de novo');
+		} catch (err) {
+			toast.error(mensagemDeErro(err));
+		} finally {
+			salvandoPerfis = false;
+		}
 	}
 
 	// ---------- Dados do grupo ----------
@@ -292,6 +309,25 @@
 			{#if camposEditados}
 				<Button variant="outline" class="border-2 font-bold afunda" onclick={desfazerCampos}>Desfazer</Button>
 			{/if}
+		</div>
+	</section>
+
+	<section class="flex flex-col gap-3 rounded-xl border-2 bg-card p-4 shadow-md sm:p-5" data-testid="secao-perfis-visiveis">
+		<h3 class="text-lg font-black">Privacidade dos perfis</h3>
+		<div class="flex items-start gap-2">
+			<Checkbox
+				id="perfis-visiveis"
+				checked={!!grupo.perfisVisiveis}
+				disabled={salvandoPerfis}
+				onCheckedChange={(v) => mudarPerfisVisiveis(v === true)}
+				class="mt-0.5 size-5 border-2"
+			/>
+			<div class="flex flex-col gap-0.5">
+				<Label for="perfis-visiveis" class="font-bold">Participantes podem ver o perfil uns dos outros</Label>
+				<p class="text-sm text-muted-foreground">
+					Desligado, só quem tirar a pessoa vê o perfil dela. Ligado, todos clicam no nome para ver. Dá para mudar a qualquer momento.
+				</p>
+			</div>
 		</div>
 	</section>
 
