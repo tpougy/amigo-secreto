@@ -1,6 +1,7 @@
 <script lang="ts">
 	// Diálogo com o perfil de outro participante (só quando o organizador liga `perfisVisiveis`).
 	// As regras do Instant recortam: com a opção desligada, as respostas vêm vazias.
+	// A consulta segue o último participante aberto (não só `aberto`), para não piscar ao fechar.
 	import type { DefCampo } from '@amigo/dominio';
 	import { db } from '#lib/instant.js';
 	import { respostasVisiveis } from '#lib/grupo/consultas.js';
@@ -19,7 +20,7 @@
 	} = $props();
 
 	const consulta = db.useQuery(() =>
-		aberto && participante
+		participante
 			? { participantes: { $: { where: { id: participante.id } }, respostas: { campo: {} } } }
 			: null
 	);

@@ -66,6 +66,12 @@
 	let vendo = $state<ParticipanteLista | null>(null);
 	let vendoAberto = $state(false);
 
+	// Se o organizador desliga a opção (ou a pessoa é removida) com o diálogo aberto, ele fecha.
+	$effect(() => {
+		const atual = vendo && participantes.find((x) => x.id === vendo!.id);
+		if (vendoAberto && (!perfisVisiveis || !atual || atual.removido)) vendoAberto = false;
+	});
+
 	function verPerfil(p: ParticipanteLista) {
 		vendo = p;
 		vendoAberto = true;
@@ -122,7 +128,7 @@
 						<button
 							type="button"
 							class="w-fit max-w-full truncate text-left font-bold underline decoration-2 underline-offset-2 hover:decoration-primary"
-							aria-label="Ver o perfil de {p.apelido}"
+							title="Ver o perfil de {p.apelido}"
 							data-testid="ver-perfil"
 							onclick={() => verPerfil(p)}
 						>
