@@ -15,7 +15,14 @@ import {
   simularWorker,
   type Usuario,
 } from "@amigo/instant/teste";
-import { atualizarResposta, meuAmigoSecreto, meuPerfil, meusGrupos } from "./ferramentas";
+import {
+  atualizarResposta,
+  ERRO_PERFIS_OCULTOS,
+  meuAmigoSecreto,
+  meuPerfil,
+  meusGrupos,
+  perfilParticipante,
+} from "./ferramentas";
 
 const admin = adminTeste();
 const prefixo = novoPrefixo("mcp");
@@ -243,5 +250,46 @@ describe("depois de reabrir o grupo", () => {
     } finally {
       await admin.transact(admin.tx.sorteios[sorteio2]!.delete());
     }
+  });
+});
+
+describe("perfil de outro participante", () => {
+  let apelidoB: string;
+  const ligar = (v: boolean) => O.db.transact(O.db.tx.grupos[grupoId]!.update({ perfisVisiveis: v }));
+
+  beforeAll(async () => {
+    const { participantes } = await admin.query({ participantes: { $: { where: { id: part.B! } } } });
+    apelidoB = participantes[0]!.apelido;
+  });
+
+  test("com a opção desligada, recusa e aponta meu_amigo_secreto", async () => {
+    expect(await perfilParticipante(C.db, codigo, apelidoB)).toEqual({ erro: ERRO_PERFIS_OCULTOS });
+  });
+
+  test("com a opção ligada, devolve rótulos e valores (apelido sem diferença de caixa), sem ids", async () => {
+    await ligar(true);
+    const r = await perfilParticipante(C.db, comRuido(codigo), ` ${apelidoB.toUpperCase()} `);
+    expect(r).toEqual({
+      apelido: apelidoB,
+      respostas: expect.arrayContaining([
+        { rotulo: GENEROS, valor: ["poesia"] },
+        { rotulo: LIDOS, valor: ["segredo-de-B"] },
+      ]),
+    });
+    expect("respostas" in r && r.respostas).toHaveLength(2);
+    expect(JSON.stringify(r)).not.toContain(part.B!);
+  });
+
+  test("apelido desconhecido lista os participantes; quem não é do grupo não encontra o grupo", async () => {
+    const r = await perfilParticipante(C.db, codigo, "ninguém");
+    expect("erro" in r && r.erro).toStartWith("Participante não encontrado. Participantes: ");
+    expect("erro" in r && r.erro).toContain(apelidoB);
+    const estranho = await criarUsuario(prefixo);
+    expect(await perfilParticipante(estranho.db, codigo, apelidoB)).toEqual({ erro: "Grupo não encontrado" });
+  });
+
+  test("desligar de novo volta a recusar", async () => {
+    await ligar(false);
+    expect(await perfilParticipante(C.db, codigo, apelidoB)).toEqual({ erro: ERRO_PERFIS_OCULTOS });
   });
 });

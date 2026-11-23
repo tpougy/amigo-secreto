@@ -8,7 +8,7 @@ import { init } from "@instantdb/admin";
 import { z } from "zod";
 import schema from "@amigo/instant";
 import { GoogleComEmail } from "./google";
-import { atualizarResposta, meuAmigoSecreto, meuPerfil, meusGrupos, type Db } from "./ferramentas";
+import { atualizarResposta, meuAmigoSecreto, meuPerfil, meusGrupos, perfilParticipante, type Db } from "./ferramentas";
 
 function exigir(nome: string): string {
   const v = process.env[nome];
@@ -124,7 +124,7 @@ servidor.addTool({
   description:
     "Mostra quem o usuário tirou no sorteio do grupo. Retorna { apelido, respostas: [{ rotulo, valor }] } com " +
     "o perfil de gostos dessa pessoa (use para sugerir presentes), ou { aviso } se o sorteio ainda não aconteceu. " +
-    "Conta como o usuário ter visto o próprio par. Só existe o próprio par: não há como ver o de outra pessoa.",
+    "Conta como o usuário ter visto o próprio par. Só existe o próprio par: não há como ver o de outra pessoa (o perfil de outros, quando liberado, vem de perfil_participante).",
   parameters: z.object({ grupo }),
   annotations: { readOnlyHint: false, idempotentHint: true },
   execute: (a, ctx) => comoUsuario("meu_amigo_secreto", ctx.session, (db) => meuAmigoSecreto(db, a.grupo)),
@@ -138,6 +138,21 @@ servidor.addTool({
   parameters: z.object({ grupo }),
   annotations: { readOnlyHint: true },
   execute: (a, ctx) => comoUsuario("meu_perfil", ctx.session, (db) => meuPerfil(db, a.grupo)),
+});
+
+servidor.addTool({
+  name: "perfil_participante",
+  description:
+    "Mostra o perfil (respostas) de outro participante do grupo, pelo apelido. Só funciona se o organizador " +
+    "liberou ver os perfis no grupo; senão devolve um erro explicando. Retorna { apelido, respostas: [{ rotulo, valor }] }. " +
+    "Com apelido desconhecido, o erro lista os apelidos dos participantes. Não revela quem tirou quem.",
+  parameters: z.object({
+    grupo,
+    apelido: z.string().min(1).describe("Apelido do participante, como aparece no grupo"),
+  }),
+  annotations: { readOnlyHint: true },
+  execute: (a, ctx) =>
+    comoUsuario("perfil_participante", ctx.session, (db) => perfilParticipante(db, a.grupo, a.apelido)),
 });
 
 servidor.addTool({

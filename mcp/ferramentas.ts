@@ -145,6 +145,48 @@ export async function meuAmigoSecreto(db: Db, grupo: string): Promise<AmigoSecre
   };
 }
 
+export const ERRO_PERFIS_OCULTOS =
+  "Neste grupo o organizador não liberou ver o perfil dos outros participantes. " +
+  "Para ver o perfil de quem você tirou, use meu_amigo_secreto.";
+
+export type PerfilParticipante = { apelido: string; respostas: { rotulo: string; valor: ValorResposta }[] };
+
+/**
+ * Perfil (respostas) de outro participante, achado pelo apelido. Só quando o organizador ligou
+ * `perfisVisiveis`; a regra de `respostas` é quem garante, aqui só se explica a recusa.
+ */
+export async function perfilParticipante(
+  db: Db,
+  grupo: string,
+  apelido: string,
+): Promise<PerfilParticipante | Erro> {
+  const ctx = await contexto(db, grupo);
+  if ("erro" in ctx) return ctx;
+  if (!ctx.grupo.perfisVisiveis) return { erro: ERRO_PERFIS_OCULTOS };
+  const { participantes } = await db.query({
+    participantes: {
+      $: { where: { "grupo.id": ctx.grupo.id, removido: false } },
+      respostas: { campo: {} },
+    },
+  });
+  const alvo = normalizarRotulo(apelido);
+  const achados = participantes.filter((p) => normalizarRotulo(p.apelido) === alvo);
+  if (achados.length !== 1) {
+    const nomes = participantes.map((p) => p.apelido).sort((a, b) => a.localeCompare(b, "pt-BR"));
+    return {
+      erro:
+        (achados.length ? "Há mais de um participante com esse apelido" : "Participante não encontrado") +
+        `. Participantes: ${nomes.join(", ")}`,
+    };
+  }
+  const p = achados[0]!;
+  const limpas = limparRespostas(ctx.campos, respostasPorCampo(p.respostas));
+  return {
+    apelido: p.apelido,
+    respostas: ctx.campos.flatMap((c) => (c.id in limpas ? [{ rotulo: c.rotulo, valor: limpas[c.id]! }] : [])),
+  };
+}
+
 export type CampoPerfil = {
   rotulo: string;
   tipo: TipoCampo;
