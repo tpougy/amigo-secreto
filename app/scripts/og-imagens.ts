@@ -1,5 +1,6 @@
-// Gera as imagens de prévia de link (Open Graph, 1200×630) em app/static/og/.
-// Roda uma vez, à mão, quando o visual ou os textos mudarem; os PNGs são versionados.
+// Gera as imagens de divulgação: prévias de link (Open Graph, 1200×630) em app/static/og/ e a
+// arte de stories (1080×1920) em docs/divulgacao/. Roda à mão quando o visual ou os textos mudarem;
+// os PNGs são versionados.
 // Uso (de app/): bun scripts/og-imagens.ts
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -17,6 +18,10 @@ const COR = {
   azul: "#bfdbfe",
   laranja: "#fed7aa",
   lima: "#d9f99d",
+  // Cores próprias da landing (layout.css: --color-rosa, --color-lima, --color-ceu), em hex aproximado.
+  rosa: "#f7a6cc",
+  limaForte: "#c8f169",
+  ceu: "#94d2f2",
   branco: "#ffffff",
 };
 const BORDA = `6px solid ${COR.tinta}`;
@@ -185,6 +190,154 @@ function convite(): No {
   );
 }
 
+/** Stories (1080×1920): o conteúdo da landing, com as faixas de cima e de baixo livres para a interface do app. */
+function stories(): No {
+  const passo = (n: number, cor: string, titulo: string, texto: string, rot: number) =>
+    div(
+      {
+        alignItems: "center",
+        width: 940,
+        boxSizing: "border-box",
+        gap: 28,
+        padding: "22px 30px",
+        background: COR.branco,
+        border: BORDA,
+        borderRadius: 22,
+        boxShadow: sombra(10),
+        transform: `rotate(${rot}deg)`,
+      },
+      [
+        div(
+          {
+            width: 96,
+            height: 96,
+            flexShrink: 0,
+            alignItems: "center",
+            justifyContent: "center",
+            background: cor,
+            border: BORDA,
+            borderRadius: 16,
+            fontSize: 60,
+            fontWeight: 900,
+          },
+          String(n),
+        ),
+        div({ flexDirection: "column", width: 735, gap: 2 }, [
+          div({ fontSize: 46, fontWeight: 900 }, titulo),
+          div({ fontSize: 30, fontWeight: 400, lineHeight: 1.25 }, texto),
+        ]),
+      ],
+    );
+  return div(
+    {
+      width: 1080,
+      height: 1920,
+      flexDirection: "column",
+      background: COR.fundo,
+      backgroundImage: "radial-gradient(circle, rgba(10,10,10,0.16) 2.5px, transparent 2.5px)",
+      backgroundSize: "36px 36px",
+      color: COR.tinta,
+      fontFamily: "DM Sans",
+      paddingTop: 210,
+      paddingBottom: 300,
+      paddingLeft: 70,
+      paddingRight: 70,
+      gap: 48,
+    },
+    [
+      // Cartão principal
+      div(
+        {
+          flexDirection: "column",
+          position: "relative",
+          width: 940,
+          boxSizing: "border-box",
+          padding: "60px 50px 50px",
+          background: COR.branco,
+          border: "8px solid #0a0a0a",
+          borderRadius: 30,
+          boxShadow: sombra(18),
+          gap: 30,
+        },
+        [
+          div(
+            {
+              position: "absolute",
+              top: -34,
+              right: 40,
+              padding: "8px 22px",
+              background: COR.rosa,
+              border: BORDA,
+              borderRadius: 12,
+              boxShadow: sombra(5),
+              fontSize: 34,
+              fontWeight: 900,
+              transform: "rotate(4deg)",
+            },
+            "SEM PAPELZINHO!",
+          ),
+          div({ fontSize: 108, fontWeight: 900, letterSpacing: -4, lineHeight: 0.95 }, "Amigo secreto"),
+          div(
+            {
+              alignSelf: "flex-start",
+              padding: "4px 26px 14px",
+              background: COR.ambar,
+              border: "8px solid #0a0a0a",
+              borderRadius: 18,
+              boxShadow: sombra(10),
+              fontSize: 96,
+              fontWeight: 900,
+              letterSpacing: -4,
+              lineHeight: 1,
+              transform: "rotate(-2deg)",
+            },
+            "do jeito certo.",
+          ),
+          div(
+            { fontSize: 36, fontWeight: 700, lineHeight: 1.3, marginTop: 10 },
+            "Crie o grupo, chame a turma e deixe o sorteio com a gente: cada um descobre quem tirou e o que essa pessoa gosta de ganhar.",
+          ),
+        ],
+      ),
+      // Passos
+      div({ flexDirection: "column", gap: 24 }, [
+        passo(1, COR.ambar, "Crie o grupo", "Tema, datas e o que cada um deve contar sobre si.", -1),
+        passo(2, COR.ceu, "Chame a turma", "Um código de 6 letras ou um QR Code.", 1),
+        passo(3, COR.rosa, "Sorteie", "Cada um vê só quem tirou. Nem o organizador sabe os pares.", -1),
+      ]),
+      // Chamada final
+      div({ flexDirection: "column", alignItems: "center", width: 940, gap: 20, marginTop: 10 }, [
+        div({ fontSize: 40, fontWeight: 900 }, "Monte o do seu grupo em"),
+        div(
+          {
+            padding: "18px 44px 24px",
+            background: COR.ambar,
+            border: "8px solid #0a0a0a",
+            borderRadius: 24,
+            boxShadow: sombra(14),
+            fontSize: 76,
+            fontWeight: 900,
+            letterSpacing: -2,
+          },
+          "amigo.tpou.gy",
+        ),
+        div(
+          {
+            marginTop: 14,
+            padding: "10px 24px",
+            background: COR.limaForte,
+            border: BORDA,
+            borderRadius: 14,
+            fontSize: 30,
+            fontWeight: 700,
+          },
+          "Grátis, sem anúncios, dados guardados no Brasil.",
+        ),
+      ]),
+    ],
+  );
+}
+
 const fontes = [400, 700, 900].map((peso) => ({
   name: "DM Sans",
   data: fonte(peso),
@@ -192,14 +345,22 @@ const fontes = [400, 700, 900].map((peso) => ({
   style: "normal" as const,
 }));
 
+async function gerar(caminho: string, arvore: No, largura: number, altura: number) {
+  const svg = await satori(arvore as never, { width: largura, height: altura, fonts: fontes });
+  const png = new Resvg(svg, { fitTo: { mode: "width", value: largura } }).render().asPng();
+  writeFileSync(caminho, png);
+  console.log(`${caminho.split("/").slice(-2).join("/")}: ${Math.round(png.length / 1024)} KB`);
+}
+
 const destino = fileURLToPath(new URL("../static/og/", import.meta.url));
 mkdirSync(destino, { recursive: true });
 for (const [nome, arvore] of [
   ["site", site()],
   ["convite", convite()],
 ] as const) {
-  const svg = await satori(arvore as never, { width: 1200, height: 630, fonts: fontes });
-  const png = new Resvg(svg, { fitTo: { mode: "width", value: 1200 } }).render().asPng();
-  writeFileSync(`${destino}${nome}.png`, png);
-  console.log(`${nome}.png: ${Math.round(png.length / 1024)} KB`);
+  await gerar(`${destino}${nome}.png`, arvore, 1200, 630);
 }
+
+const divulgacao = fileURLToPath(new URL("../../docs/divulgacao/", import.meta.url));
+mkdirSync(divulgacao, { recursive: true });
+await gerar(`${divulgacao}stories.png`, stories(), 1080, 1920);
