@@ -17,7 +17,9 @@ export default defineConfig({
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
 			// SPA puro: toda rota cai no index.html (o Worker de arquivos estáticos serve o fallback: not_found_handling).
-			adapter: adapter({ fallback: 'index.html' })
+			adapter: adapter({ fallback: 'index.html' }),
+			// Confere a cada 5 min se há versão nova; havendo, a próxima navegação recarrega a página inteira.
+			version: { pollInterval: 5 * 60_000 }
 		})
 	],
 	server: {
