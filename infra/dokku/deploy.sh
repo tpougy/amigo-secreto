@@ -14,3 +14,9 @@ if ! git diff --quiet HEAD; then
   echo "aviso: há mudanças não commitadas; só o HEAD ($(git rev-parse --short HEAD)) vai para o deploy" >&2
 fi
 git push "dokku@vps-mercurio:$app" HEAD:main --force
+
+# O painel fica parado por padrão (sobe sob demanda com scripts/painel); o deploy o liga, então desliga.
+if [ "$app" = amigo-painel ]; then
+  ssh vps-mercurio dokku ps:stop amigo-painel >/dev/null
+  echo "amigo-painel publicado e parado (abra com scripts/painel)"
+fi

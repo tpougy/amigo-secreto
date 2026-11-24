@@ -43,7 +43,7 @@ infra/instant/instant-push.sh teste
 infra/instant/instant-push.sh prod
 infra/instant/instant-origens.sh  # origens autorizadas do OAuth
 
-# Painel do OpenWorkflow (túnel SSH, http://localhost:3999)
+# Painel do OpenWorkflow: liga o amigo-painel, abre o túnel (http://localhost:3999) e desliga no Ctrl+C
 scripts/painel
 
 # E2E em produção (limpa o que cria)
@@ -66,7 +66,7 @@ Logs do worker: `ssh vps-mercurio 'dokku logs amigo-worker --num 100'`. Passos d
 - Front: https://amigo.tpou.gy (Worker `amigo-secreto`, deploy por push na `main`; reserva https://amigo-secreto.thomaz-pougy.workers.dev).
 - MCP: https://amigo-mcp.app.tpou.gy/mcp
 - Instant: https://instant.tpou.gy
-- Dokku (VPS `vps-mercurio`): `amigo-worker`, `amigo-mcp`, `amigo-painel` (só em `127.0.0.1:3999`, via `scripts/painel`).
+- Dokku (VPS `vps-mercurio`): `amigo-worker`, `amigo-mcp`, `amigo-painel` (parado por padrão; só em `127.0.0.1:3999`, ligado sob demanda por `scripts/painel`).
 - Login só com Google (`PUBLIC_LOGIN_MAGIC=off`).
 
 ## Segredos e onde guardá-los

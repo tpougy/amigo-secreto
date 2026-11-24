@@ -1,24 +1,47 @@
 #!/usr/bin/env bash
-# Abre o painel do OpenWorkflow (amigo-painel, 127.0.0.1:3999 na VPS) por túnel SSH.
-# Ctrl+C encerra o túnel. PAINEL_SEM_NAVEGADOR=1 só imprime a URL.
+# Painel do OpenWorkflow sob demanda: liga o app `amigo-painel` (parado por padrão), abre o túnel
+# SSH para 127.0.0.1:3999 na VPS e, ao sair (Ctrl+C, erro ou túnel caído), desliga o painel.
+# PAINEL_SEM_NAVEGADOR=1 só imprime a URL. PAINEL_MANTER_LIGADO=1 não desliga ao sair.
 set -euo pipefail
 
+APP=amigo-painel
 PORTA=3999
 URL="http://localhost:$PORTA"
+PID=""
+
+encerrar() {
+  if [ -n "$PID" ]; then
+    kill "$PID" 2>/dev/null || true
+    wait "$PID" 2>/dev/null || true
+  fi
+  echo
+  if [ -n "${PAINEL_MANTER_LIGADO:-}" ]; then
+    echo "túnel encerrado; $APP continua ligado"
+  elif ssh vps-mercurio dokku ps:stop "$APP" >/dev/null 2>&1; then
+    echo "túnel encerrado; $APP desligado"
+  else
+    echo "aviso: não consegui desligar; rode: ssh vps-mercurio dokku ps:stop $APP" >&2
+  fi
+}
+trap encerrar EXIT
+trap 'exit 0' INT TERM
+
+echo "ligando $APP..."
+ssh vps-mercurio dokku ps:start "$APP" >/dev/null
 
 ssh -N -o ExitOnForwardFailure=yes -L "$PORTA:127.0.0.1:$PORTA" vps-mercurio &
 PID=$!
-trap 'kill "$PID" 2>/dev/null || true; wait "$PID" 2>/dev/null || true; echo; echo "túnel encerrado"' EXIT
-trap 'exit 0' INT TERM
 
-# Espera o túnel aceitar conexões (até ~10 s).
-for _ in $(seq 1 50); do
+# Espera o túnel e o painel responderem (até ~30 s: o container acabou de subir).
+pronto=""
+for _ in $(seq 1 150); do
   kill -0 "$PID" 2>/dev/null || { echo "o túnel não subiu" >&2; exit 1; }
-  curl -s -o /dev/null "$URL/" && break
+  if curl -s -o /dev/null "$URL/"; then pronto=1; break; fi
   sleep 0.2
 done
+[ -n "$pronto" ] || { echo "o painel não respondeu em 30 s" >&2; exit 1; }
 
-echo "painel: $URL (túnel ssh pid $PID; Ctrl+C encerra)"
+echo "painel: $URL (Ctrl+C encerra e desliga o painel)"
 if [ -n "${PAINEL_SEM_NAVEGADOR:-}" ]; then
   :
 elif command -v wslview >/dev/null; then
