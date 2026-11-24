@@ -418,7 +418,7 @@ describe("participantes: alteração e remoção", () => {
     await org.db.transact(org.db.tx.participantes[pid]!.unlink({ usuario: u.id }));
     const r = await admin.query({ participantes: { $: { where: { id: pid } }, usuario: {} } });
     expect(r.participantes[0]!.removido).toBe(true);
-    expect(r.participantes[0]!.usuario).toBeUndefined();
+    expect(r.participantes[0]!.usuario ?? undefined).toBeUndefined(); // link vazio: ausente (de47af8) ou null (fb241e1a)
   });
 
   test("remoção pela UI: removido + removidoNaRodada + unlink + respostas por lookup de chave", async () => {
@@ -444,7 +444,7 @@ describe("participantes: alteração e remoção", () => {
     const r = await admin.query({ participantes: { $: { where: { id: pid } }, usuario: {}, respostas: {} } });
     expect(r.participantes[0]!.removido).toBe(true);
     expect(r.participantes[0]!.removidoNaRodada).toBe(1);
-    expect(r.participantes[0]!.usuario).toBeUndefined();
+    expect(r.participantes[0]!.usuario ?? undefined).toBeUndefined(); // link vazio: ausente (de47af8) ou null (fb241e1a)
     expect(r.participantes[0]!.respostas).toEqual([]);
     // Membro comum não marca removidoNaRodada em outro.
     await esperarTipo(
