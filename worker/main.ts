@@ -8,6 +8,7 @@ import schema from "@amigo/instant";
 import { log } from "./nucleo/log";
 import { validarSegredo } from "./nucleo/seed";
 import { definirApagarConta, processarPedidosExclusao } from "./workflows/apagarConta";
+import { definirLimpeza } from "./workflows/limparHistorico";
 import { definirReabrirGrupo, processarReaberturas } from "./workflows/reabrirGrupo";
 import { definirSorteio, processarPendentes } from "./workflows/sortear";
 
@@ -41,11 +42,13 @@ const db = init({
 });
 const concorrencia = Number(process.env.OW_CONCORRENCIA ?? "2") || 2;
 
-const backend = BackendSqlite.connect(process.env.OW_DB ?? "/data/ow.db");
+const owDb = process.env.OW_DB ?? "/data/ow.db";
+const backend = BackendSqlite.connect(owDb);
 const ow = new OpenWorkflow({ backend });
 definirSorteio(ow, db, { segredo });
 definirApagarConta(ow, db);
 definirReabrirGrupo(ow, db);
+await definirLimpeza(ow, owDb); // runs encerrados há mais de 30 dias, todo dia às 05:00
 
 const worker = ow.newWorker({ concurrency: concorrencia });
 await worker.start();
