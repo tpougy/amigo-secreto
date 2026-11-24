@@ -1,5 +1,5 @@
 // Consulta da página do grupo e funções puras que leem o resultado (testadas em consultas.test.ts).
-import { limparRespostas, type DefCampo, type TipoCampo, type ValorResposta } from "@amigo/dominio";
+import { isoParaDia, limparRespostas, type DefCampo, type TipoCampo, type ValorResposta } from "@amigo/dominio";
 
 /**
  * Tudo que a página do grupo precisa, numa consulta só. As regras do Instant recortam o resto:
@@ -138,16 +138,7 @@ export function dataBr(d: string | number | null | undefined): string | null {
 }
 
 /** `Date`/ISO do Instant → `YYYY-MM-DD` (para `<input type="date">`), no fuso de São Paulo. */
-export function paraInputData(d: string | number | null | undefined): string {
-  if (!d) return "";
-  const p = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Sao_Paulo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date(d));
-  return p;
-}
+export const paraInputData = (d: string | number | null | undefined): string => isoParaDia(d);
 
 export type ReaberturaBruta = { id: string; status: string; erro?: string | null; criadoEm: string | number };
 

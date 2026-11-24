@@ -17,6 +17,9 @@ import {
 } from "@amigo/instant/teste";
 import {
   atualizarResposta,
+  editarCamposPerfil,
+  editarGrupo,
+  painelGrupo,
   ERRO_PERFIS_OCULTOS,
   meuAmigoSecreto,
   meuPerfil,
@@ -291,5 +294,97 @@ describe("perfil de outro participante", () => {
   test("desligar de novo volta a recusar", async () => {
     await ligar(false);
     expect(await perfilParticipante(C.db, codigo, apelidoB)).toEqual({ erro: ERRO_PERFIS_OCULTOS });
+  });
+});
+
+describe("organizador", () => {
+  const SO_ORGANIZADOR = "Só o organizador do grupo pode fazer isso";
+  const camposAtuais = async () => {
+    const { campos } = await admin.query({ campos: { $: { where: { "grupo.id": grupoId } } } });
+    return campos.sort((a, b) => a.ordem - b.ordem).map((c) => ({ rotulo: c.rotulo, tipo: c.tipo, ordem: c.ordem }));
+  };
+
+  test("painel_grupo: o organizador vê grupo, participantes e campos, sem ids; participante não", async () => {
+    const p = await painelGrupo(O.db, comRuido(codigo));
+    if ("erro" in p) throw new Error(p.erro);
+    expect(p.codigo).toBe(formatarCodigo(codigo));
+    expect(p.participantes).toHaveLength(4);
+    expect(p.participantes[0]).toEqual({ apelido: expect.any(String), perfilCompleto: expect.any(Boolean), removido: false });
+    expect(p.campos.map((c) => c.rotulo)).toEqual([LIDOS, GENEROS]); // ordem do tema no grupo de teste
+    expect(JSON.stringify(p)).not.toContain(grupoId);
+    expect(await painelGrupo(A.db, codigo)).toEqual({ erro: SO_ORGANIZADOR });
+  });
+
+  test("editar_grupo: muda só o que vier, valida o estado final e recusa quem não organiza", async () => {
+    expect(
+      await editarGrupo(O.db, codigo, {
+        titulo: "  Amigo dos livros  ",
+        dataSorteioPrevista: "2026-12-10",
+        dataEvento: "2026-12-20",
+        valorSugerido: 80,
+        perfisVisiveis: true,
+      }),
+    ).toEqual({ ok: true });
+    const { grupos } = await admin.query({ grupos: { $: { where: { id: grupoId } } } });
+    expect(grupos[0]).toMatchObject({ titulo: "Amigo dos livros", valorSugerido: 80, perfisVisiveis: true });
+    const p = await painelGrupo(O.db, codigo);
+    expect(p).toMatchObject({ dataSorteioPrevista: "2026-12-10", dataEvento: "2026-12-20" });
+
+    expect(await editarGrupo(O.db, codigo, { dataEvento: "2026-12-01" })).toEqual({
+      erro: "A data do evento não pode ser anterior à data prevista do sorteio.",
+    });
+    expect(await editarGrupo(O.db, codigo, { titulo: "ab" })).toEqual({ erro: "O título precisa ter de 3 a 80 caracteres." });
+    expect(await editarGrupo(O.db, codigo, { valorSugerido: null, descricao: null })).toEqual({ ok: true });
+    expect(await editarGrupo(A.db, codigo, { titulo: "Invasão" })).toEqual({ erro: SO_ORGANIZADOR });
+    const depois = await admin.query({ grupos: { $: { where: { id: grupoId } } } });
+    expect(depois.grupos[0]).toMatchObject({ titulo: "Amigo dos livros" });
+    expect(depois.grupos[0]!.valorSugerido ?? null).toBeNull();
+  });
+
+  test("editar_campos_perfil: renomeia, cria e reordena; remover exige confirmação", async () => {
+    // Remover LIDOS sem confirmar: erro e nada muda.
+    const semConfirmar = await editarCamposPerfil(O.db, codigo, [
+      { rotulo: GENEROS, tipo: "multipla", obrigatorio: true, opcoes: ["fantasia", "poesia", "suspense"] },
+    ]);
+    expect("erro" in semConfirmar && semConfirmar.erro).toContain(LIDOS);
+    expect((await camposAtuais()).map((c) => c.rotulo)).toEqual([LIDOS, GENEROS]);
+
+    // Opção insuficiente: erro de validação.
+    expect(
+      await editarCamposPerfil(O.db, codigo, [
+        { rotulo: GENEROS, tipo: "multipla", obrigatorio: true, opcoes: ["fantasia"] },
+        { rotulo: LIDOS, tipo: "lista", obrigatorio: false },
+      ]),
+    ).toEqual({ erro: `Campo 1 (${GENEROS}): informe pelo menos 2 opções.` });
+
+    // Renomeia LIDOS (via rotuloAtual), cria um novo no topo e mantém GENEROS (rótulo com outra caixa).
+    const r = await editarCamposPerfil(O.db, codigo, [
+      { rotulo: "Formato preferido", tipo: "unica", obrigatorio: false, opcoes: ["papel", "e-book"] },
+      { rotulo: GENEROS.toUpperCase(), tipo: "multipla", obrigatorio: true, opcoes: ["fantasia", "poesia"] },
+      { rotuloAtual: LIDOS, rotulo: "Livros que já tenho", tipo: "lista", obrigatorio: false, ajuda: "Para não repetir" },
+    ]);
+    expect(r).toEqual({ ok: true, campos: ["Formato preferido", GENEROS.toUpperCase(), "Livros que já tenho"], removidos: [] });
+    expect(await camposAtuais()).toEqual([
+      { rotulo: "Formato preferido", tipo: "unica", ordem: 0 },
+      { rotulo: GENEROS.toUpperCase(), tipo: "multipla", ordem: 1 },
+      { rotulo: "Livros que já tenho", tipo: "lista", ordem: 2 },
+    ]);
+    // A resposta de B ao campo renomeado continua lá (mesmo campo).
+    const { respostas } = await admin.query({ respostas: { $: { where: { "participante.id": part.B! } }, campo: {} } });
+    expect(respostas.some((x) => x.campo?.rotulo === "Livros que já tenho")).toBe(true);
+
+    // Com confirmação, remove.
+    const removido = await editarCamposPerfil(
+      O.db,
+      codigo,
+      [{ rotulo: "Formato preferido", tipo: "unica", obrigatorio: false, opcoes: ["papel", "e-book"] }],
+      true,
+    );
+    expect(removido).toEqual({
+      ok: true,
+      campos: ["Formato preferido"],
+      removidos: [GENEROS.toUpperCase(), "Livros que já tenho"],
+    });
+    expect(await editarCamposPerfil(A.db, codigo, [])).toEqual({ erro: SO_ORGANIZADOR });
   });
 });

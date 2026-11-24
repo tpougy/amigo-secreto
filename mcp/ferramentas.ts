@@ -2,9 +2,14 @@
 // Todas as leituras e escritas passam pelas regras do Instant como o próprio usuário: nada aqui
 // usa privilégio de admin, então ninguém enxerga o par de outra pessoa.
 // Devolvem rótulos e valores, nunca ids de participantes ou respostas.
-import { lookup, type init } from "@instantdb/admin";
+import { id as novoId, lookup, type init } from "@instantdb/admin";
 import {
+  diaParaIso,
   formatarCodigo,
+  isoParaDia,
+  temOpcoes,
+  validarCamposEditados,
+  validarDadosGrupo,
   limparRespostas,
   normalizarCodigo,
   perfilCompleto,
@@ -261,4 +266,183 @@ export async function atualizarResposta(
   );
   await db.transact(ops);
   return { ok: true };
+}
+
+// ---------- Organizador (baixo risco: nada aqui sorteia, reabre, remove, encerra ou apaga) ----------
+
+export const ERRO_SO_ORGANIZADOR = "Só o organizador do grupo pode fazer isso";
+
+/** Grupo (por id ou código) que o usuário ORGANIZA, com campos, participantes e sorteios. */
+async function contextoOrganizador(db: Db, grupo: string) {
+  const codigo = normalizarCodigo(grupo);
+  const gid = grupo.trim();
+  if (!codigo && !UUID.test(gid)) return { erro: "Grupo não encontrado" } as Erro;
+  const eu = await meuId(db);
+  if (!eu) return { erro: "Usuário não encontrado" } as Erro;
+  const { grupos } = await db.query({
+    grupos: {
+      $: { where: codigo ? { codigo } : { id: gid } },
+      organizador: {},
+      campos: {},
+      participantes: {},
+      sorteios: {},
+    },
+  });
+  const g = grupos[0];
+  if (!g) return { erro: "Grupo não encontrado" } as Erro;
+  // A regra de $users só mostra o próprio usuário: o link aparece só para o organizador.
+  if (g.organizador?.id !== eu) return { erro: ERRO_SO_ORGANIZADOR } as Erro;
+  const campos = g.campos.map(defCampo).sort((a, b) => a.ordem - b.ordem);
+  return { grupo: g, campos };
+}
+
+export type PainelGrupo = {
+  titulo: string;
+  descricao: string | null;
+  codigo: string;
+  tema: string;
+  status: string;
+  rodada: number;
+  dataSorteioPrevista: string | null;
+  dataEvento: string | null;
+  valorSugerido: number | null;
+  perfisVisiveis: boolean;
+  sorteioEmAndamento: boolean;
+  participantes: { apelido: string; perfilCompleto: boolean; removido: boolean }[];
+  campos: { rotulo: string; tipo: TipoCampo; obrigatorio: boolean; ajuda?: string; opcoes?: string[] }[];
+};
+
+export async function painelGrupo(db: Db, grupo: string): Promise<PainelGrupo | Erro> {
+  const ctx = await contextoOrganizador(db, grupo);
+  if ("erro" in ctx) return ctx;
+  const g = ctx.grupo;
+  return {
+    titulo: g.titulo,
+    descricao: g.descricao ?? null,
+    codigo: formatarCodigo(g.codigo),
+    tema: g.tema,
+    status: g.status,
+    rodada: g.rodadaAtual,
+    dataSorteioPrevista: isoParaDia(g.dataSorteioPrevista) || null,
+    dataEvento: isoParaDia(g.dataEvento) || null,
+    valorSugerido: g.valorSugerido ?? null,
+    perfisVisiveis: !!g.perfisVisiveis,
+    sorteioEmAndamento: g.sorteios.some((x) => x.status === "pendente" || x.status === "processando"),
+    participantes: [...g.participantes]
+      .sort((a, b) => new Date(a.entrouEm).getTime() - new Date(b.entrouEm).getTime())
+      .map((p) => ({ apelido: p.apelido, perfilCompleto: p.perfilCompleto, removido: p.removido })),
+    campos: ctx.campos.map((c) => ({
+      rotulo: c.rotulo,
+      tipo: c.tipo,
+      obrigatorio: c.obrigatorio,
+      ...(c.ajuda ? { ajuda: c.ajuda } : {}),
+      ...(c.opcoes ? { opcoes: c.opcoes } : {}),
+    })),
+  };
+}
+
+export type MudancasGrupo = {
+  titulo?: string;
+  descricao?: string | null;
+  /** `AAAA-MM-DD` ou `null` para apagar. */
+  dataSorteioPrevista?: string | null;
+  dataEvento?: string | null;
+  valorSugerido?: number | null;
+  perfisVisiveis?: boolean;
+};
+
+const DIA = /^\d{4}-\d{2}-\d{2}$/;
+
+export async function editarGrupo(db: Db, grupo: string, m: MudancasGrupo): Promise<{ ok: true } | Erro> {
+  const ctx = await contextoOrganizador(db, grupo);
+  if ("erro" in ctx) return ctx;
+  const g = ctx.grupo;
+  for (const d of [m.dataSorteioPrevista, m.dataEvento]) {
+    if (d != null && (!DIA.test(d) || Number.isNaN(new Date(`${d}T12:00:00`).getTime()))) {
+      return { erro: "Datas no formato AAAA-MM-DD" };
+    }
+  }
+  // Valida o estado FINAL (atual + mudanças), com as regras da tela de Configurações.
+  const final = {
+    titulo: m.titulo ?? g.titulo,
+    descricao: m.descricao !== undefined ? (m.descricao ?? "") : (g.descricao ?? ""),
+    dataSorteio: m.dataSorteioPrevista !== undefined ? (m.dataSorteioPrevista ?? "") : isoParaDia(g.dataSorteioPrevista),
+    dataEvento: m.dataEvento !== undefined ? (m.dataEvento ?? "") : isoParaDia(g.dataEvento),
+    valor: m.valorSugerido !== undefined ? m.valorSugerido : (g.valorSugerido ?? null),
+  };
+  const erros = validarDadosGrupo(final);
+  if (erros.length) return { erro: erros.join(" ") };
+
+  const dados: Record<string, unknown> = {};
+  if (m.titulo !== undefined) dados.titulo = m.titulo.trim();
+  if (m.descricao !== undefined) dados.descricao = m.descricao?.trim() || null;
+  if (m.dataSorteioPrevista !== undefined) dados.dataSorteioPrevista = m.dataSorteioPrevista ? diaParaIso(m.dataSorteioPrevista) : null;
+  if (m.dataEvento !== undefined) dados.dataEvento = m.dataEvento ? diaParaIso(m.dataEvento) : null;
+  if (m.valorSugerido !== undefined) dados.valorSugerido = m.valorSugerido;
+  if (m.perfisVisiveis !== undefined) dados.perfisVisiveis = m.perfisVisiveis;
+  if (Object.keys(dados).length === 0) return { erro: "Nada para mudar" };
+  await db.transact(db.tx.grupos[g.id]!.update(dados));
+  return { ok: true };
+}
+
+export type CampoEditado = {
+  rotulo: string;
+  tipo: TipoCampo;
+  obrigatorio: boolean;
+  ajuda?: string;
+  opcoes?: string[];
+  /** Rótulo atual do campo, para renomear. Sem ele, o campo é achado pelo próprio `rotulo`. */
+  rotuloAtual?: string;
+};
+
+export async function editarCamposPerfil(
+  db: Db,
+  grupo: string,
+  campos: CampoEditado[],
+  confirmarRemocao = false,
+): Promise<{ ok: true; campos: string[]; removidos: string[] } | Erro> {
+  const ctx = await contextoOrganizador(db, grupo);
+  if ("erro" in ctx) return ctx;
+  const erros = validarCamposEditados(campos.map((c) => ({ rotulo: c.rotulo, tipo: c.tipo, opcoes: c.opcoes ?? [] })));
+  if (erros.length) return { erro: erros.join(" ") };
+
+  // Casa cada campo pedido com um existente (rotuloAtual, senão rotulo); cada existente casa uma vez só.
+  const livres = new Map(ctx.campos.map((c) => [c.id, c]));
+  const achar = (rotulo: string) => {
+    const alvo = normalizarRotulo(rotulo);
+    for (const [cid, c] of livres) if (normalizarRotulo(c.rotulo) === alvo) return cid;
+    return null;
+  };
+  const plano = campos.map((c) => {
+    const cid = achar(c.rotuloAtual ?? c.rotulo);
+    if (cid) livres.delete(cid);
+    return { cid, c };
+  });
+  const removidos = [...livres.values()];
+  if (removidos.length && !confirmarRemocao) {
+    return {
+      erro:
+        `Isso removeria os campos ${removidos.map((c) => `"${c.rotulo}"`).join(", ")} e apagaria as respostas ` +
+        "já dadas a eles. Confirme com o usuário e chame de novo com confirmarRemocao: true. " +
+        "Para renomear um campo sem perder as respostas, use rotuloAtual.",
+    };
+  }
+
+  const ops = [
+    ...removidos.map((c) => db.tx.campos[c.id]!.delete()),
+    ...plano.map(({ cid, c }, ordem) => {
+      const ajuda = c.ajuda?.trim();
+      const dados = {
+        rotulo: c.rotulo.trim(),
+        ajuda: ajuda || null,
+        tipo: c.tipo,
+        opcoes: temOpcoes(c.tipo) ? (c.opcoes ?? []).map((o) => o.trim()).filter(Boolean) : null,
+        obrigatorio: c.obrigatorio,
+        ordem,
+      };
+      return cid ? db.tx.campos[cid]!.update(dados) : db.tx.campos[novoId()]!.create(dados).link({ grupo: ctx.grupo.id });
+    }),
+  ];
+  await db.transact(ops);
+  return { ok: true, campos: plano.map(({ c }) => c.rotulo.trim()), removidos: removidos.map((c) => c.rotulo) };
 }

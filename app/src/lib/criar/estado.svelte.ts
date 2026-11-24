@@ -1,6 +1,16 @@
 // Lógica pura do assistente "Criar grupo" (sem runes, para ser testável com `bun test`).
 // A página guarda um `Estado` em `$state` e chama estas funções.
-import { camposIniciais, TEMAS, type Tema, type TipoCampo } from "@amigo/dominio";
+import {
+  camposIniciais,
+  diaParaIso,
+  TEMAS,
+  temOpcoes as temOpcoesDominio,
+  validarCamposEditados,
+  validarDatasValor,
+  validarTituloDescricao,
+  type Tema,
+  type TipoCampo,
+} from "@amigo/dominio";
 
 export const ETAPAS = ["Tema", "Sobre", "Datas e regras", "Campos", "Revisão", "Compartilhar"] as const;
 /** Índice da etapa "Compartilhar" (a última). */
@@ -39,7 +49,7 @@ export type Estado = {
   camposEditados: boolean;
 };
 
-export const temOpcoes = (t: TipoCampo) => t === "multipla" || t === "unica";
+export const temOpcoes = (t: TipoCampo) => temOpcoesDominio(t);
 
 let contador = 0;
 export function novaChave(): string {
@@ -94,29 +104,11 @@ export function valorNumerico(valor: string): number | null {
 
 /** Erros (mensagens em pt-BR) da etapa `n`. Lista vazia = pode avançar. */
 export function validarEtapa(n: number, estado: Estado): string[] {
-  const erros: string[] = [];
-  if (n === 1) {
-    const t = estado.titulo.trim().length;
-    if (t < 3 || t > 80) erros.push("O título precisa ter de 3 a 80 caracteres.");
-    if (estado.descricao.trim().length > 500) erros.push("A descrição pode ter no máximo 500 caracteres.");
-  }
-  if (n === 2) {
-    if (estado.dataSorteio && estado.dataEvento && estado.dataEvento < estado.dataSorteio) {
-      erros.push("A data do evento não pode ser anterior à data prevista do sorteio.");
-    }
-    const v = valorNumerico(estado.valor);
-    if (v !== null && (Number.isNaN(v) || v < 0)) erros.push("O valor sugerido precisa ser um número maior ou igual a 0.");
-  }
-  if (n === 3) {
-    estado.campos.forEach((c, i) => {
-      const nome = `Campo ${i + 1}`;
-      if (c.rotulo.trim() === "") erros.push(`${nome}: informe o rótulo.`);
-      if (temOpcoes(c.tipo) && c.opcoes.map((o) => o.trim()).filter(Boolean).length < 2) {
-        erros.push(`${nome}${c.rotulo.trim() ? ` (${c.rotulo.trim()})` : ""}: informe pelo menos 2 opções.`);
-      }
-    });
-  }
-  return erros;
+  // As regras ficam em @amigo/dominio (grupo.ts), compartilhadas com o MCP.
+  if (n === 1) return validarTituloDescricao(estado);
+  if (n === 2) return validarDatasValor({ ...estado, valor: valorNumerico(estado.valor) });
+  if (n === 3) return validarCamposEditados(estado.campos);
+  return [];
 }
 
 /** Erros de todas as etapas de dados (1 a 3), com a primeira etapa que falhou. */
@@ -153,9 +145,7 @@ export function apelidoDoEmail(email: string | null | undefined): string {
   return (parte || "Organizador").slice(0, 40);
 }
 
-export function dataIso(d: string): string {
-  return new Date(`${d}T12:00:00`).toISOString();
-}
+export const dataIso = (d: string): string => diaParaIso(d);
 
 /** Operações da transação ÚNICA: 1 grupo + N campos + 1 participante (o organizador). */
 export function paraTransacao(estado: Estado, ids: Ids): Operacao[] {
