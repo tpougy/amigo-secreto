@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { codigoDeQR, destinoAoAbrirCodigo, erroDeEntrada } from "./navegacao";
+import { codigoDeQR, linkConvite, destinoAoAbrirCodigo, erroDeEntrada } from "./navegacao";
 
 const g = (status: string) => ({ id: "g1", status });
 
@@ -31,6 +31,9 @@ describe("codigoDeQR", () => {
     expect(codigoDeQR("https://amigo.tpou.gy/g/KQ7M4P")).toBe("KQ7M4P");
     expect(codigoDeQR("https://amigo.tpou.gy/g/kq7-m4p?x=1")).toBe("KQ7M4P");
     expect(codigoDeQR("KQ7M4P")).toBe("KQ7M4P");
+    expect(codigoDeQR("https://amigo.tpou.gy/convite/?c=KQ7M4P")).toBe("KQ7M4P");
+    expect(codigoDeQR("https://amigo.tpou.gy/convite?c=kq7-m4p&x=1")).toBe("KQ7M4P");
+    expect(linkConvite("https://amigo.tpou.gy", "KQ7M4P")).toBe("https://amigo.tpou.gy/convite/?c=KQ7M4P");
     expect(codigoDeQR("https://exemplo.com/")).toBeNull();
     expect(codigoDeQR("KQ0M4P")).toBeNull();
   });

@@ -24,10 +24,18 @@ export function destinoAoAbrirCodigo(e: EntradaNavegacao): DestinoCodigo {
   return { tipo: "previa" };
 }
 
-/** Código contido num QR: uma URL `.../g/<CODIGO>` ou só o código. `null` se não for válido. */
+/**
+ * Link de convite para compartilhar: aponta para `convite/index.html` (arquivo estático com a
+ * prévia de convite para WhatsApp/Teams), que redireciona para `/g/<CODIGO>`.
+ */
+export function linkConvite(origem: string, codigo: string): string {
+  return `${origem}/convite/?c=${encodeURIComponent(codigo)}`;
+}
+
+/** Código contido num QR: uma URL `.../g/<CODIGO>`, `.../convite/?c=<CODIGO>` ou só o código. `null` se não for válido. */
 export function codigoDeQR(texto: string): string | null {
   const t = texto.trim();
-  const m = /\/g\/([^/?#\s]+)/.exec(t);
+  const m = /\/g\/([^/?#\s]+)/.exec(t) ?? /\/convite\/?\?(?:[^#\s]*&)?c=([^&#\s]+)/.exec(t);
   return normalizarCodigo(m ? decodeURIComponent(m[1]!) : t);
 }
 

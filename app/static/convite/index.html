@@ -1,0 +1,39 @@
+<!doctype html>
+<!--
+	Link de convite: https://amigo.tpou.gy/convite/?c=<CODIGO>.
+	Arquivo estático só para a prévia de convite (WhatsApp, Teams...): os robôs leem as tags abaixo,
+	e quem abre no navegador é levado para /g/<CODIGO> (ou para "Entrar em um grupo", se o código vier inválido).
+	Sem og:url de propósito: o código varia e o HTML é o mesmo.
+-->
+<html lang="pt-BR">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Convite · Amigo Secreto</title>
+		<meta name="description" content="Toque para entrar no grupo e montar seu perfil." />
+		<meta name="robots" content="noindex" />
+		<meta property="og:type" content="website" />
+		<meta property="og:site_name" content="Amigo Secreto" />
+		<meta property="og:locale" content="pt_BR" />
+		<meta property="og:title" content="Você foi convidado para um amigo secreto!" />
+		<meta property="og:description" content="Toque para entrar no grupo e montar seu perfil." />
+		<meta property="og:image" content="https://amigo.tpou.gy/og/convite.png" />
+		<meta property="og:image:type" content="image/png" />
+		<meta property="og:image:width" content="1200" />
+		<meta property="og:image:height" content="630" />
+		<meta property="og:image:alt" content="Convite para um amigo secreto" />
+		<meta name="twitter:card" content="summary_large_image" />
+		<script>
+			// Mesmo alfabeto e tamanho de pacotes/dominio/codigo.ts (normalizarCodigo).
+			var c = (new URLSearchParams(location.search).get('c') || '').replace(/[\s-]/g, '').toUpperCase();
+			location.replace(/^[BCDFGHJKMNPQRSTVWXZ2-9]{6}$/.test(c) ? '/g/' + c : '/entrar-grupo');
+		</script>
+		<style>
+			body { font-family: system-ui, sans-serif; background: #f7f0df; color: #0a0a0a; display: grid; place-items: center; min-height: 100vh; margin: 0; }
+			a { color: inherit; font-weight: 700; }
+		</style>
+	</head>
+	<body>
+		<noscript><p>Ative o JavaScript ou <a href="/entrar-grupo">entre no grupo pelo código</a>.</p></noscript>
+	</body>
+</html>

@@ -17,8 +17,10 @@
 		"test": "bun test src"
 	},
 	"devDependencies": {
+		"@fontsource/dm-sans": "5.3.0",
 		"@internationalized/date": "^3.12.1",
 		"@lucide/svelte": "^1.77.0",
+		"@resvg/resvg-js": "2.6.2",
 		"@sveltejs/adapter-static": "^4.0.1",
 		"@sveltejs/kit": "^3.2.0",
 		"@sveltejs/vite-plugin-svelte": "^7.3.1",
@@ -26,6 +28,7 @@
 		"@types/qrcode": "^1.5.6",
 		"bits-ui": "^2.21.0",
 		"clsx": "^2.1.1",
+		"satori": "0.63.2",
 		"svelte": "^5.57.3",
 		"svelte-check": "^4.7.8",
 		"svelte-sonner": "^1.2.3",

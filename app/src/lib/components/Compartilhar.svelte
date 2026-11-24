@@ -2,6 +2,7 @@
 	// Tela final do assistente: código grande, QR do link, copiar, Web Share e "Ir para o grupo".
 	import QRCode from 'qrcode';
 	import { formatarCodigo } from '@amigo/dominio';
+	import { linkConvite } from '#lib/navegacao.js';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import CopyIcon from '@lucide/svelte/icons/copy';
 	import CheckIcon from '@lucide/svelte/icons/check';
@@ -21,7 +22,9 @@
 		naPaginaDoGrupo?: boolean;
 	} = $props();
 
-	const link = $derived(`${window.location.origin}/g/${codigo}`);
+	// QR aponta direto para /g/ (a câmera abre sem prévia); o link copiado/compartilhado é o de convite.
+	const linkQR = $derived(`${window.location.origin}/g/${codigo}`);
+	const link = $derived(linkConvite(window.location.origin, codigo));
 	let svg = $state('');
 	let copiado = $state(false);
 	let erro = $state<string | null>(null);
@@ -29,7 +32,7 @@
 
 	$effect(() => {
 		let ativo = true;
-		QRCode.toString(link, { type: 'svg', margin: 1, errorCorrectionLevel: 'M', width: 240 }).then(
+		QRCode.toString(linkQR, { type: 'svg', margin: 1, errorCorrectionLevel: 'M', width: 240 }).then(
 			(s) => {
 				if (ativo) svg = s;
 			},
