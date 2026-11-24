@@ -191,6 +191,30 @@ function convite(): No {
 }
 
 /** Stories (1080×1920): o conteúdo da landing, com as faixas de cima e de baixo livres para a interface do app. */
+/**
+ * Pontinhos do fundo da landing (`bg-pontos`: 1,2 px a cada 22 px), na escala ~2× da arte.
+ * Camada de bolinhas absolutas: o radial-gradient repetido não renderiza no satori.
+ */
+function pontos(largura: number, altura: number, passo = 44, raio = 2.4): No {
+  const bolinhas: No[] = [];
+  for (let y = passo / 2; y < altura; y += passo) {
+    for (let x = passo / 2; x < largura; x += passo) {
+      bolinhas.push(
+        div({
+          position: "absolute",
+          left: x - raio,
+          top: y - raio,
+          width: raio * 2,
+          height: raio * 2,
+          borderRadius: raio,
+          background: COR.tinta,
+        }),
+      );
+    }
+  }
+  return div({ position: "absolute", left: 0, top: 0, width: largura, height: altura }, bolinhas);
+}
+
 function stories(): No {
   const passo = (n: number, cor: string, titulo: string, texto: string, rot: number) =>
     div(
@@ -200,7 +224,7 @@ function stories(): No {
         boxSizing: "border-box",
         gap: 28,
         padding: "22px 30px",
-        background: COR.branco,
+        background: COR.fundo,
         border: BORDA,
         borderRadius: 22,
         boxShadow: sombra(10),
@@ -234,8 +258,7 @@ function stories(): No {
       height: 1920,
       flexDirection: "column",
       background: COR.fundo,
-      backgroundImage: "radial-gradient(circle, rgba(10,10,10,0.16) 2.5px, transparent 2.5px)",
-      backgroundSize: "36px 36px",
+      position: "relative",
       color: COR.tinta,
       fontFamily: "DM Sans",
       paddingTop: 210,
@@ -245,6 +268,8 @@ function stories(): No {
       gap: 48,
     },
     [
+      pontos(1080, 1920),
+      // Conteúdo: cada bloco tem posição própria para ficar acima da camada de pontos.
       // Cartão principal
       div(
         {
@@ -253,7 +278,7 @@ function stories(): No {
           width: 940,
           boxSizing: "border-box",
           padding: "60px 50px 50px",
-          background: COR.branco,
+          background: COR.fundo,
           border: "8px solid #0a0a0a",
           borderRadius: 30,
           boxShadow: sombra(18),
@@ -300,13 +325,13 @@ function stories(): No {
         ],
       ),
       // Passos
-      div({ flexDirection: "column", gap: 24 }, [
+      div({ position: "relative", flexDirection: "column", gap: 24 }, [
         passo(1, COR.ambar, "Crie o grupo", "Tema, datas e o que cada um deve contar sobre si.", -1),
         passo(2, COR.ceu, "Chame a turma", "Um código de 6 letras ou um QR Code.", 1),
         passo(3, COR.rosa, "Sorteie", "Cada um vê só quem tirou. Nem o organizador sabe os pares.", -1),
       ]),
       // Chamada final
-      div({ flexDirection: "column", alignItems: "center", width: 940, gap: 20, marginTop: 10 }, [
+      div({ position: "relative", flexDirection: "column", alignItems: "center", width: 940, gap: 20, marginTop: 10 }, [
         div({ fontSize: 40, fontWeight: 900 }, "Monte o do seu grupo em"),
         div(
           {
