@@ -90,7 +90,7 @@
 
 		<section class="grid gap-6 md:grid-cols-3">
 			{#each passos as p, i (p.titulo)}
-				<div class="rounded-xl border-2 bg-background p-5 shadow-md {i === 1 ? 'md:translate-y-4' : ''}">
+				<div class="rounded-xl border-2 bg-background p-5 shadow-md">
 					<div class="flex items-center gap-3">
 						<span class="inline-flex size-11 items-center justify-center rounded-md border-2 shadow-xs {p.cor}">
 							<p.Icone class="size-6" />
