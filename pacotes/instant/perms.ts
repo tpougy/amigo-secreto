@@ -159,6 +159,11 @@ const rules = {
     },
   },
 
+  // Contador público da landing: qualquer um lê (até sem login); só o worker (admin) grava.
+  estatisticas: {
+    allow: { view: "true", create: "false", update: "false", delete: "false" },
+  },
+
   restricoes: {
     bind: {
       ehOrganizador: "auth.id != null && auth.id in data.ref('grupo.organizador.id')",

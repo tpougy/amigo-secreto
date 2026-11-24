@@ -9,6 +9,7 @@ import { log } from "./nucleo/log";
 import { validarSegredo } from "./nucleo/seed";
 import { definirApagarConta, processarPedidosExclusao } from "./workflows/apagarConta";
 import { definirLimpeza } from "./workflows/limparHistorico";
+import { definirEstatisticas } from "./workflows/estatisticas";
 import { definirReabrirGrupo, processarReaberturas } from "./workflows/reabrirGrupo";
 import { definirSorteio, processarPendentes } from "./workflows/sortear";
 
@@ -49,6 +50,7 @@ definirSorteio(ow, db, { segredo });
 definirApagarConta(ow, db);
 definirReabrirGrupo(ow, db);
 await definirLimpeza(ow, owDb); // runs encerrados há mais de 30 dias, todo dia às 05:00
+await definirEstatisticas(ow, db); // contador público da landing: de hora em hora e uma vez agora
 
 const worker = ow.newWorker({ concurrency: concorrencia });
 await worker.start();

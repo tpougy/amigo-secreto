@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { db } from '#lib/instant.js';
+	import { textoContador } from '@amigo/dominio';
 	import { destinoAposLogin, guardarIntencao, type Intencao } from '#lib/intencao.js';
 	import RodapePublico from '#lib/components/rodape-publico.svelte';
 	import GiftIcon from '@lucide/svelte/icons/gift';
@@ -11,6 +12,13 @@
 	import EyeOffIcon from '@lucide/svelte/icons/eye-off';
 
 	const auth = db.useAuth();
+
+	// Contador público (registro único gravado pelo worker); some enquanto carrega ou se não existir.
+	const estatisticas = db.useQuery({ estatisticas: {} });
+	const contador = $derived.by(() => {
+		const n = estatisticas.data?.estatisticas?.[0]?.gruposOrganizados;
+		return typeof n === 'number' ? textoContador(n) : null;
+	});
 
 	// Quem já está logado vai direto para "Meus grupos".
 	$effect(() => {
@@ -94,6 +102,17 @@
 				</div>
 			{/each}
 		</section>
+
+		{#if contador}
+			<section
+				class="flex flex-wrap items-center gap-x-4 gap-y-1 self-center rounded-xl border-4 bg-primary px-6 py-4 sombra-dura -rotate-1"
+				data-testid="contador-grupos"
+			>
+				<GiftIcon class="size-8 shrink-0" />
+				<span class="text-5xl font-black tracking-tighter tabular-nums">{contador.numero}</span>
+				<span class="text-xl font-black">{contador.rotulo}</span>
+			</section>
+		{/if}
 
 		<section class="flex items-center gap-3 self-start rounded-lg border-2 bg-lima px-4 py-3 font-bold shadow-sm">
 			<EyeOffIcon class="size-5 shrink-0" />

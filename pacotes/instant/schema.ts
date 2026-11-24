@@ -53,6 +53,12 @@ const _schema = i.schema({
       valor: i.json<ValorResposta>(),
       chave: i.string().unique(), // <participanteId>:<campoId>
     }),
+    // Registro único (id ESTATISTICAS_ID): contador público da landing, gravado só pelo worker.
+    estatisticas: i.entity({
+      gruposOrganizados: i.number(),
+      contadoAte: i.date(), // criação do grupo mais recente já contado
+      atualizadoEm: i.date(),
+    }),
     restricoes: i.entity({
       motivo: i.string().optional(),
     }),
