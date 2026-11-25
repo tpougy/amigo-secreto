@@ -65,6 +65,15 @@ describe("generated rules", () => {
     expect(await sorteiosDe(grupoId)).toEqual([]);
   });
 
+  test("cannot create with error, result or finishedAt already set", async () => {
+    const org = await novoUsuario(PREFIXO);
+    const grupoId = await criarGrupo(PREFIXO, org);
+    await esperarNegado(criarSorteio(org, grupoId, id(), { error: "x" }));
+    await esperarNegado(criarSorteio(org, grupoId, id(), { result: { pares: 1 } }));
+    await esperarNegado(criarSorteio(org, grupoId, id(), { finishedAt: Date.now() }));
+    expect(await sorteiosDe(grupoId)).toEqual([]);
+  });
+
   test("cannot create with rodada 0", async () => {
     const org = await novoUsuario(PREFIXO);
     const grupoId = await criarGrupo(PREFIXO, org);

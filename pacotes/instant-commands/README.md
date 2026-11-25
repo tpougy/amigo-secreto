@@ -134,7 +134,7 @@ export default mergePerms(basePerms, [draw] as const);
 
 `mergePerms` returns `basePerms` plus, for each command:
 
-- `create`: `rateLimit.<entity>.limit(auth.id) && (<allow.create>) && data.status == 'pending' && data.attempts == 0`
+- `create`: `rateLimit.<entity>.limit(auth.id) && (<allow.create>) && data.status == 'pending' && data.attempts == 0 && data.error == null && data.result == null && data.finishedAt == null`
   (the rate limit comes first, so even denied attempts spend a token);
 - `update: "false"` and `unlink: "false"`: only the worker, as admin, changes the status;
 - `link` on the command side is allowed only at creation (`actions.data == 'create'`), plus your `allow.link` check;
@@ -142,8 +142,11 @@ export default mergePerms(basePerms, [draw] as const);
 - `$rateLimits.<entity>` when the command has a `rateLimit`.
 
 It does not mutate `basePerms`. If `basePerms` already defines the command's entity, its rate limit
-key, or a generated `link`/`unlink` rule, it fails (at compile time with a readable sentence, and at
-runtime with `CommandDefinitionError`).
+key, or a generated `link`/`unlink` rule, or the list repeats a command, it fails (at compile time
+with a readable sentence, and at runtime with `CommandDefinitionError`). The compile-time check only
+sees keys surely present in a literal base; a base annotated as `InstantRules<AppSchema>` is checked
+at runtime only. The order of the commands does not matter, even when a link of one points at the
+entity of another.
 
 ### 3. The worker
 

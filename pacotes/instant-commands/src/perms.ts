@@ -156,7 +156,7 @@ export function mergePerms<const B extends Record<string, unknown>, const Cs ext
     out[c.entity] = {
       ...(c.bind ? { bind: c.bind } : {}),
       allow: {
-        create: `${rate}(${c.allow.create}) && data.status == 'pending' && data.attempts == 0`,
+        create: `${rate}(${c.allow.create}) && data.status == 'pending' && data.attempts == 0 && data.error == null && data.result == null && data.finishedAt == null`,
         view: c.allow.view,
         update: "false",
         delete: c.allow.delete ?? "false",

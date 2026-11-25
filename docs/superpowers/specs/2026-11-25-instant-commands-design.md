@@ -235,7 +235,7 @@ Devolve o `basePerms` com o seguinte acrescentado, para cada command:
 [entity]: {
   bind: ficha.bind,
   allow: {
-    create: "rateLimit.<entity>.limit(auth.id) && (<allow.create>) && data.status == 'pending' && data.attempts == 0",
+    create: "rateLimit.<entity>.limit(auth.id) && (<allow.create>) && data.status == 'pending' && data.attempts == 0 && data.error == null && data.result == null && data.finishedAt == null",
     view: "<allow.view>",
     update: "false",
     delete: "<allow.delete ?? 'false'>",
@@ -248,9 +248,12 @@ $rateLimits: { [entity]: ficha.rateLimit },   // só se a ficha tiver rateLimit
 
 - O rate limit vem **primeiro** no `create`, para que até tentativas negadas gastem um token (como o `perms.ts` atual).
 - Sem `rateLimit` na ficha, o trecho `rateLimit...` não entra.
+- O cliente não pode criar um command já com `error`, `result` ou `finishedAt` preenchidos: só o worker escreve esses campos.
+- Se a lista repetir um command (mesma entidade ou nome), é erro, com a mesma mensagem de `commandEntities`.
+- A ordem dos commands não importa: se o `reverse.on` de um link é a entidade de outro command, as entradas `link`/`unlink` reversas entram no bloco desse command.
 - **Lado do command** (`forward.on`): o link só é feito na criação (`actions.data == 'create'`, mais a checagem opcional de `allow.link`) e nunca desfeito pelo cliente (`unlink: "false"`). É o que o `perms.ts` atual faz em `reaberturas` e `pedidosExclusao`. Sem isso, um cliente poderia desligar um command pendente do grupo e burlar regras como "não sortear com reabertura pendente".
 - **Lado reverso** (`reverse.on`): entram `allow.link[reverse.label] = "true"` e `allow.unlink[reverse.label] = "true"`. Quem trava é o lado do command, como no `perms.ts` atual (`grupos.allow.link.reaberturas: "true"`).
-- Se o `basePerms` já definir a entidade do command, a chave do rate limit ou a regra `link`/`unlink` gerada, isso é erro.
+- Se o `basePerms` já definir a entidade do command, a chave do rate limit ou a regra `link`/`unlink` gerada, isso é erro. Em tempo de compilação, só contam as chaves certamente presentes num literal: uma base anotada como `InstantRules<AppSchema>` (chaves opcionais ou índice) fica para a checagem em execução.
 - `createdAt` não é validado nas regras (igual ao `criadoEm` atual).
 
 ## Implementação: `defineHandler`

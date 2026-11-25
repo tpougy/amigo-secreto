@@ -9,7 +9,7 @@ const p = mergePerms(base, [sortear]);
 
 test("create puts the rate limit first and pins pending/0", () =>
   expect(p.sorteios.allow.create).toBe(
-    "rateLimit.sorteios.limit(auth.id) && (ehOrganizador && data.rodada > 0) && data.status == 'pending' && data.attempts == 0",
+    "rateLimit.sorteios.limit(auth.id) && (ehOrganizador && data.rodada > 0) && data.status == 'pending' && data.attempts == 0 && data.error == null && data.result == null && data.finishedAt == null",
   ));
 
 test("update is false, delete comes from the spec", () => {
@@ -55,7 +55,7 @@ const simple = defineCommand({
 
 test("no rateLimit in spec: no rateLimit term and no bucket", () => {
   const q = mergePerms({}, [simple]) as any;
-  expect(q.notas.allow.create).toBe("(true) && data.status == 'pending' && data.attempts == 0");
+  expect(q.notas.allow.create).toBe("(true) && data.status == 'pending' && data.attempts == 0 && data.error == null && data.result == null && data.finishedAt == null");
   expect(q.notas.allow.delete).toBe("false");
   expect(q.$rateLimits).toBeUndefined();
 });
@@ -120,7 +120,7 @@ describe("a command whose link points at another command's entity", () => {
   ] as const) {
     test(label, () => {
       const q = mergePerms({}, list as any) as any;
-      expect(q.owners.allow.create).toBe("(true) && data.status == 'pending' && data.attempts == 0");
+      expect(q.owners.allow.create).toBe("(true) && data.status == 'pending' && data.attempts == 0 && data.error == null && data.result == null && data.finishedAt == null");
       expect(q.owners.allow.update).toBe("false");
       expect(q.owners.allow.link).toEqual({ pointers: "true" });
       expect(q.owners.allow.unlink).toEqual({ pointers: "true" });
