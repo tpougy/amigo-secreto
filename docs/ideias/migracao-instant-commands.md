@@ -1,6 +1,6 @@
 # Migrar o amigo-secreto para o `instant-commands`: plano revisado
 
-**Data:** 2026-11-25 · **Status:** plano revisado depois do gancho `onFailure` (na `main` até `6a0c6f0`). Ainda não há spec da migração; o próximo passo é o design do piloto (reabertura).
+**Data:** 2026-11-25 · **Status:** plano revisado depois do gancho `onFailure` (na `main` até `6a0c6f0`). Depois da consulta de produção (nada a converter), o próximo passo é o design da migração completa, em corte único.
 
 ## Onde estamos
 
