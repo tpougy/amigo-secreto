@@ -34,3 +34,13 @@ deny all;
 ## Limpeza
 
 Webhook apagado (`manager.delete`), app `ic-eco` destruído (`dokku apps:destroy`), dados de teste apagados com `limparTudo`.
+
+## E2E do modo webhook (Task 17)
+
+Data: 2026-11-25. App descartável `ic-teste-worker` (`ic-teste-worker.app.tpou.gy`, Let's Encrypt, volume em `/data`, regra de nginx da decisão (a)), runner em modo webhook (`testes/e2e/worker.ts`), rodado com `testes/e2e/rodar.sh`. Resultado: 3 de 3 passaram (~110 s no total).
+
+- Command chega a `done` em menos de 10 s pelo webhook.
+- Worker parado (`dokku ps:stop`): o command fica `pending`; após `ps:start`, a varredura de partida o conclui em menos de 30 s.
+- `POST` direto da internet em `/ic/hook`: `403` (o `/health` também dá 403 de fora; a checagem do Dokku é interna).
+- Armadilha: o `bun install --frozen-lockfile` do Dockerfile precisa dos manifestos de `pacotes/dominio` e `pacotes/instant` no disco (a raiz depende deles), mesmo filtrando só `instant-commands`. O `.dockerignore` não precisou de mudança.
+- Limpeza: webhook apagado (`manager.delete`, 0 restantes), app `ic-teste-worker` e volume destruídos, dados de teste apagados no `afterAll`.
