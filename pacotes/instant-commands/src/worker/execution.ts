@@ -27,6 +27,7 @@ export type RunnerEvent = {
     | "run.failed"
     | "run.skipped"
     | "run.invalid_input"
+    | "command.failed"
     | "subscription.error";
   command?: string;
   commandId?: string;
@@ -93,13 +94,17 @@ export function registerHandler(
     };
   }
 
-  /** `markFailed` with the hook; the caller emits its own event, then `reportExtras`. */
+  /** `markFailed` with the hook; the caller emits its own event, then `reportFailed`. */
   async function writeFailed(commandId: string, reason: FailureReason, message: string): Promise<MarkFailedResult> {
     return markFailed(db, command, commandId, message, extrasFor(commandId, reason, message));
   }
 
-  /** The extra `run.failed` when the hook's chunks could not be written. */
-  function reportExtras(result: MarkFailedResult, commandId: string): void {
+  /**
+   * After the path's own event: `command.failed` (only if this call wrote `failed`, with the stored
+   * message), then the extra `run.failed` when the hook's chunks could not be written.
+   */
+  function reportFailed(result: MarkFailedResult, commandId: string, message: string): void {
+    if (result.written) emit({ type: "command.failed", ...base, commandId, error: message });
     if (result.extrasError !== undefined) emit({ type: "run.failed", ...base, commandId, error: result.extrasError });
   }
 
@@ -116,13 +121,14 @@ export function registerHandler(
         try {
           const result = await writeFailed(commandId, "step_limit", defaultErrorMessage);
           emit({ type: "run.failed", ...ev, error: messageOf(e) });
-          reportExtras(result, commandId);
+          reportFailed(result, commandId, defaultErrorMessage);
         } catch (writeError) {
           // The write with the hook failed (network, or a non-4xx error caused by its chunks): fall
           // back to `failed` alone.
           emit({ type: "run.failed", ...ev, error: messageOf(writeError) });
           try {
-            await markFailed(db, command, commandId, defaultErrorMessage);
+            const fallback = await markFailed(db, command, commandId, defaultErrorMessage);
+            if (fallback.written) emit({ type: "command.failed", ...ev, error: defaultErrorMessage });
             emit({ type: "run.failed", ...ev, error: messageOf(e) });
           } catch (fallbackError) {
             emit({ type: "run.failed", ...ev, error: messageOf(fallbackError) });
@@ -147,7 +153,7 @@ export function registerHandler(
         }
         const result = await writeFailed(commandId, reason, message);
         emit({ type: "run.failed", ...ev, error });
-        reportExtras(result, commandId);
+        reportFailed(result, commandId, message);
         return null;
       });
 
@@ -164,7 +170,7 @@ export function registerHandler(
         const fields = [...new Set(problems.map((p) => p.slice(0, p.indexOf(":"))))];
         const result = await writeFailed(commandId, "invalid_input", defaultErrorMessage);
         emit({ type: "run.invalid_input", ...ev, fields });
-        reportExtras(result, commandId);
+        reportFailed(result, commandId, defaultErrorMessage);
         return { proceed: true, invalid: fields };
       }
       const values: Record<string, unknown> = {};
@@ -217,6 +223,7 @@ export function registerHandler(
       }
       // The handler may also have ended it itself (`command.complete` or `failCommand` in its own transaction).
       emit({ type: record.status === "failed" ? "run.failed" : "run.done", ...ev });
+      if (record.status === "failed") emit({ type: "command.failed", ...ev, error: record.error ?? defaultErrorMessage });
       return { outcome: "done" };
     });
     if (finish.outcome === "invalid_result") await failStep("invalid_result", defaultErrorMessage, finish.error);

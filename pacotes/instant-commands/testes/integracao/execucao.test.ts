@@ -26,6 +26,8 @@ afterEach(async () => {
 });
 
 const EVENT_KEYS = new Set(["type", "command", "commandId", "count", "error", "fields"]);
+const failedEvents = (events: RunnerEvent[], cid: string) =>
+  events.filter((e) => e.commandId === cid && e.type === "command.failed");
 
 /** Fresh engine with `handler` registered and started; returns the collected events. */
 async function rodar(nome: string, handler: Handler<any, any>) {
@@ -319,6 +321,7 @@ describe("command execution", () => {
     expect(r.error).toBe(DEFAULT_ERROR);
     const ev = await esperarEvento(events, cid, "run.failed");
     expect(ev.error).toMatch(/step limit/);
+    expect(failedEvents(events, cid)).toHaveLength(1);
     // A sweep would dispatch it again: no new run.
     await engine.dispatch("sortear", cid);
     await new Promise((res) => setTimeout(res, 500));
@@ -460,5 +463,139 @@ describe("onFailure", () => {
     expect(r.status).toBe("done");
     await esperarEvento(events, cid, "run.done");
     expect(seen).toHaveLength(0);
+  });
+});
+
+describe("command.failed", () => {
+  const evOf = (events: RunnerEvent[], cid: string) => events.filter((e) => e.commandId === cid).map((e) => e.type);
+
+  test("fail('msg') → one command.failed with error 'msg'", async () => {
+    const h = defineHandler(sortear, async () => fail("msg"));
+    const { engine, events } = await rodar("cf-fail", h);
+    const { cid } = await novoCommand();
+    await engine.dispatch("sortear", cid);
+    await esperarFim(cid);
+    await esperarEvento(events, cid, "command.failed");
+    const f = failedEvents(events, cid);
+    expect(f).toHaveLength(1);
+    expect(f[0]).toEqual({ type: "command.failed", command: "sortear", commandId: cid, error: "msg" });
+  });
+
+  test("step that exhausts retries → one command.failed with the default message", async () => {
+    const h = defineHandler(
+      sortear,
+      async ({ step }) => {
+        await step.run("always", () => {
+          throw new Error("database exploded");
+        });
+      },
+      { retryPolicy: { maximumAttempts: 2, initialInterval: "10ms" } },
+    );
+    const { engine, events } = await rodar("cf-esgota", h);
+    const { cid } = await novoCommand();
+    await engine.dispatch("sortear", cid);
+    await esperarEvento(events, cid, "command.failed");
+    const f = failedEvents(events, cid);
+    expect(f).toHaveLength(1);
+    expect(f[0]!.error).toBe(DEFAULT_ERROR);
+  });
+
+  test("invalid returned result → one command.failed", async () => {
+    const h = defineHandler(sortear, async () => ({ pares: "many" }) as any, { defaultErrorMessage: "Draw failed" });
+    const { engine, events } = await rodar("cf-resultado", h);
+    const { cid } = await novoCommand();
+    await engine.dispatch("sortear", cid);
+    await esperarEvento(events, cid, "command.failed");
+    const f = failedEvents(events, cid);
+    expect(f).toHaveLength(1);
+    expect(f[0]!.error).toBe("Draw failed");
+  });
+
+  test("stored input invalid → one command.failed", async () => {
+    const sortearNovo = defineCommand({ ...sortear, name: "sortearNovo", fields: { ...sortear.fields, prioridade: i.number() } });
+    const h = defineHandler(sortearNovo, async () => ({ pares: 1 }));
+    const { engine, events } = await rodar("cf-entrada", h);
+    const { cid } = await novoCommand();
+    await engine.dispatch("sortearNovo", cid);
+    await esperarEvento(events, cid, "command.failed");
+    const f = failedEvents(events, cid);
+    expect(f).toHaveLength(1);
+    expect(f[0]!.error).toBe(DEFAULT_ERROR);
+  });
+
+  test("handler fails itself with failCommand and returns → one command.failed with that error", async () => {
+    const h = defineHandler(sortear, async ({ db, command }) => {
+      await db.transact(failCommand(sortear, command.id, "own"));
+    });
+    const { engine, events } = await rodar("cf-proprio", h);
+    const { cid } = await novoCommand();
+    await engine.dispatch("sortear", cid);
+    await esperarEvento(events, cid, "command.failed");
+    const f = failedEvents(events, cid);
+    expect(f).toHaveLength(1);
+    expect(f[0]!.error).toBe("own");
+  });
+
+  test("handler fails itself with failCommand and then throws → no command.failed", async () => {
+    const h = defineHandler(sortear, async ({ db, command }) => {
+      await db.transact(failCommand(sortear, command.id, "own"));
+      throw new Error("after failCommand");
+    });
+    const { engine, events } = await rodar("cf-proprio-lanca", h);
+    const { cid } = await novoCommand();
+    await engine.dispatch("sortear", cid);
+    await esperarEvento(events, cid, "run.failed");
+    await new Promise((res) => setTimeout(res, 300));
+    expect(failedEvents(events, cid)).toHaveLength(0);
+  });
+
+  test("onFailure that throws → one command.failed, after the run.failed and before the 'onFailure: ' run.failed", async () => {
+    const h = defineHandler(sortear, async () => fail("original"), {
+      onFailure: () => {
+        throw new Error("hook bug");
+      },
+    });
+    const { engine, events } = await rodar("cf-hook", h);
+    const { cid } = await novoCommand();
+    await engine.dispatch("sortear", cid);
+    await esperarAte(async () => events.some((e) => e.commandId === cid && e.error?.startsWith("onFailure: ")), 15_000);
+    const mine = events.filter((e) => e.commandId === cid);
+    expect(failedEvents(events, cid)).toHaveLength(1);
+    expect(failedEvents(events, cid)[0]!.error).toBe("original");
+    const first = mine.findIndex((e) => e.type === "run.failed" && e.error === "original");
+    const cf = mine.findIndex((e) => e.type === "command.failed");
+    const extra = mine.findIndex((e) => e.type === "run.failed" && e.error === "onFailure: hook bug");
+    expect(first).toBeGreaterThanOrEqual(0);
+    expect(cf).toBeGreaterThan(first);
+    expect(extra).toBeGreaterThan(cf);
+  });
+
+  test("done command → no command.failed", async () => {
+    const h = defineHandler(sortear, async () => ({ pares: 1 }));
+    const { engine, events } = await rodar("cf-feito", h);
+    const { cid } = await novoCommand();
+    await engine.dispatch("sortear", cid);
+    await esperarEvento(events, cid, "run.done");
+    expect(failedEvents(events, cid)).toHaveLength(0);
+    expect(evOf(events, cid)).not.toContain("command.failed");
+  });
+
+  test("command deleted mid-run → no command.failed", async () => {
+    let liberar!: () => void;
+    const sinal = new Promise<void>((res) => (liberar = res));
+    let iniciou = false;
+    const h = defineHandler(sortear, async () => {
+      iniciou = true;
+      await sinal;
+      return { pares: 1 };
+    });
+    const { engine, events } = await rodar("cf-apagado", h);
+    const { cid, grupoId } = await novoCommand();
+    await engine.dispatch("sortear", cid);
+    await esperarAte(async () => iniciou, 15_000);
+    await admin.transact(admin.tx.grupos[grupoId]!.delete());
+    liberar();
+    await esperarEvento(events, cid, "run.skipped");
+    expect(failedEvents(events, cid)).toHaveLength(0);
   });
 });
