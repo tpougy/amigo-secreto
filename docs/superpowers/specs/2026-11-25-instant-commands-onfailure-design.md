@@ -184,3 +184,4 @@ Implementado em `pacotes/instant-commands` (`src/worker/handler.ts`, `status.ts`
 3. **Regra acrescentada** (não estava na proposta): um elemento do array sem `__ops` é tratado como erro do gancho, com `error: "onFailure: must return transaction chunks"`.
 4. **Campos gravados como `null`** são omitidos de `ctx.command`, como os ausentes.
 5. **Novo script `test:one`** no `package.json` do pacote, para rodar um arquivo de teste isolado.
+6. **Endurecimento do caminho `step_limit`** (vale também sem gancho): se a gravação com o gancho lançar (rede, ou erro não-4xx causado pelos extras), grava só `failed` e emite `run.failed` com o erro; o `StepLimitExceededError` original é sempre relançado, mesmo se essa segunda gravação falhar, para que o `dispatch` não abra uma execução `:retry:`. Coberto por testes de unidade em `src/worker/execution.test.ts` (motor e db falsos).

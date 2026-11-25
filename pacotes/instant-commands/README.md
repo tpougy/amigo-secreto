@@ -191,6 +191,7 @@ async function runDraw({ db, command, step }: Ctx<typeof draw>) {
 // roll back business state here (the command's effects may never have happened) and keep side
 // effects in `onEvent`.
 function releaseKey({ db, command }: ic.FailureContext<typeof draw, AppSchema>) {
+  if (typeof command.key !== "string") return [];
   return [db.tx.draws[command.id].update({ key: `${command.key}:failed:${command.id}` })];
 }
 
@@ -256,21 +257,28 @@ process.on("SIGTERM", () => void runner.stop().then(() => process.exit(0)));
 - Step names starting with `ic:` are reserved for the library's internal steps.
 - `onFailure` (a `defineHandler` option) adds your writes to the same transaction in which the
   library writes `failed`, on every failure path: `ic.fail`, an unexpected exception, an invalid
-  result, an invalid input and the step limit. It receives `{ db, command, reason, error }`, where
-  `reason` is `"fail" | "error" | "invalid_result" | "invalid_input" | "step_limit"`. `command` is
-  re-read at failure time and holds only the command's own fields and `id`; for `"invalid_input"`
-  its fields are `unknown` and only the ones present are included (fields stored as `null` are
-  omitted too). It returns transaction chunks (or a promise of them) and must never call
-  `db.transact`. It may run more than once (replay), so do not put side effects in it; use
-  `onEvent` (`run.failed`) for those. Two fallbacks keep a broken hook from leaving the command
-  `running`: if the hook throws, returns a non-array or returns an element that is not a
-  transaction chunk, `failed` is written alone and an extra `run.failed` event has an `error`
-  starting with `"onFailure: "` (`"onFailure: must return transaction chunks"` for the non-chunk
-  case); if Instant rejects the transaction (an `InstantAPIError` 4xx, except 408 and 429),
-  `failed` is written alone and an extra `run.failed` event has
-  `error: "onFailure rejected: <message>"`. Other transaction errors propagate (and, except on the step-limit path, which runs outside any
-  step, the internal step is retried). The hook does not run when the command is `done`, was deleted or already finished,
-  or when the handler itself wrote `failed` with `failCommand` inside its own transaction.
+  result, an invalid input and the step limit.
+  - It receives `{ db, command, reason, error }`, where `reason` is
+    `"fail" | "error" | "invalid_result" | "invalid_input" | "step_limit"`. `command` is re-read at
+    failure time and holds only the command's own fields and `id`; for `"invalid_input"` its fields
+    are `unknown` and only the ones present are included (fields stored as `null` are omitted too).
+    It returns transaction chunks (or a promise of them).
+  - It must never call `db.transact`, and it may run more than once (replay), so do not put side
+    effects in it; use `onEvent` (`run.failed`) for those. Keep the extras simple (writes to the
+    command's own record): extras that deterministically make Instant fail with a non-4xx error
+    are retried with the internal step and can re-run the handler.
+  - Fallbacks keep a broken hook from leaving the command `running`. If the hook throws, returns a
+    non-array or returns an element that is not a transaction chunk, `failed` is written alone and
+    an extra `run.failed` event has an `error` starting with `"onFailure: "`
+    (`"onFailure: must return transaction chunks"` for the non-chunk case). If Instant rejects the
+    transaction (an `InstantAPIError` 4xx, except 408 and 429), `failed` is written alone and an
+    extra `run.failed` event has `error: "onFailure rejected: <message>"`. Other transaction errors
+    propagate and the internal step is retried; on the step-limit path, which runs outside any
+    step, `failed` is written alone instead.
+  - Because of these fallbacks, `onEvent` may receive an additional `run.failed` whose `error`
+    starts with `onFailure`; consumers that act once per failure should filter on that prefix.
+  - It does not run when the command no longer exists or is already `done` or `failed` (including
+    when the handler marked it `failed` with `failCommand` in its own transaction).
 
 `defineHandler(command, fn, { version, retryPolicy, defaultErrorMessage, onFailure })`: `version` is the
 OpenWorkflow workflow version; change it when steps change incompatibly.

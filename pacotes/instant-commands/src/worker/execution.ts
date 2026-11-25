@@ -109,11 +109,25 @@ export function registerHandler(
       return await runCommand(commandId, engineStep);
     } catch (e) {
       // The step limit is final: no step can be recorded anymore (so the write happens outside any
-      // step), and the engine does not open a new run for it.
+      // step), and the engine does not open a new run for it. The original error is ALWAYS rethrown:
+      // the engine recognizes a step-limit run by its stored error, and any other error would make it
+      // open a `:retry:` run that redoes every step (and the handler's side effects).
       if (isStepLimitExceeded(e)) {
-        const result = await writeFailed(commandId, "step_limit", defaultErrorMessage);
-        emit({ type: "run.failed", ...ev, error: messageOf(e) });
-        reportExtras(result, commandId);
+        try {
+          const result = await writeFailed(commandId, "step_limit", defaultErrorMessage);
+          emit({ type: "run.failed", ...ev, error: messageOf(e) });
+          reportExtras(result, commandId);
+        } catch (writeError) {
+          // The write with the hook failed (network, or a non-4xx error caused by its chunks): fall
+          // back to `failed` alone.
+          emit({ type: "run.failed", ...ev, error: messageOf(writeError) });
+          try {
+            await markFailed(db, command, commandId, defaultErrorMessage);
+            emit({ type: "run.failed", ...ev, error: messageOf(e) });
+          } catch (fallbackError) {
+            emit({ type: "run.failed", ...ev, error: messageOf(fallbackError) });
+          }
+        }
       }
       throw e;
     }

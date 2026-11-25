@@ -105,6 +105,7 @@ async function runDraw({ db, command, step }: Ctx<typeof draw>) {
 // roll back business state here (the command's effects may never have happened) and keep side
 // effects in `onEvent`.
 function releaseKey({ db, command }: icWorker.FailureContext<typeof draw, AppSchema>) {
+  if (typeof command.key !== "string") return [];
   return [db.tx.draws[command.id].update({ key: `${command.key}:failed:${command.id}` })];
 }
 
