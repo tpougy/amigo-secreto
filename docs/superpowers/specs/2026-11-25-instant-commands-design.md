@@ -39,7 +39,8 @@ O público é quem continuar no Instant em hospedagem própria depois do fim do 
 
 ## Restrições
 
-- Usa só APIs públicas: SDK admin do Instant (`query`, `transact`, `subscribeQuery`), webhooks e OpenWorkflow.
+- Usa só APIs públicas: SDK admin do Instant (`query`, `transact`, `subscribeQuery`, `webhooks`) e OpenWorkflow.
+- Nunca depende de `INSTANT_WEBHOOK_ALLOW_INSECURE` (ver Implantação do modo webhook).
 - Deve funcionar igual no Instant original e no instantdb-rust. Diferenças conhecidas entre versões, como link vazio voltando `null` ou ausente, são tratadas pela biblioteca.
 - O Instant não tem escrita condicional (compare-and-set). Dois runs do mesmo command podem, em casos raros, rodar ao mesmo tempo. A biblioteca reduz a janela, mas os handlers precisam aguentar repetição.
 - A `idempotencyKey` do OpenWorkflow dura 24 h, então não é a garantia principal. A garantia é a checagem de status antes do run (ver Runner).
@@ -69,6 +70,11 @@ O público é quem continuar no Instant em hospedagem própria depois do fim do 
 - **Os objetos do Instant como estão (escolhida):** o link é o mesmo bloco do `schema.ts`, as regras usam `bind`/`allow` e o rate limit usa o formato de `$rateLimits`.
 - Forma curta própria (`{ to, reverse, onDelete }`, `perUser: "5/hora"`): menos texto, mas é vocabulário a aprender.
 
+**Como o runner fica sabendo dos commands:**
+- **Webhook como padrão, assinatura como opção (escolhida).** O aviso do webhook é durável (gravado na transação do command) e toda falha é visível, sem a conexão "meio aberta" da assinatura. Com as varreduras ao subir e periódica, o pior atraso fica em ~5 min. Custa um endereço HTTPS por worker.
+- Só assinatura, como hoje: zero configuração, mas pode parar de receber sem erro (até 10 min, até a reassinatura).
+- Webhook para a rede interna com `INSTANT_WEBHOOK_ALLOW_INSECURE`: descartado. A chave é global e transforma o Instant numa ponte para a rede interna, a serviço de qualquer token vazado.
+
 **Validação do resultado em execução:**
 - **`result` aceita também um Standard Schema (escolhida).** O worker valida antes de gravar e o cliente valida ao ler, o que protege contra dados antigos. O custo é o validador ir para o pacote do navegador. Também é possível usar só `i.json<T>()`.
 - Só `i.json<T>()`: tipo sem validação em execução e sem dependência no navegador, mas sem proteção contra dados de um formato anterior.
@@ -97,9 +103,9 @@ Pontos de entrada:
 | `instant-commands/perms` | `mergePerms` | sim |
 | `instant-commands/client` | `sendCommand`, `subscribeCommand`, `waitForCommand` | sim |
 | `instant-commands/worker` | `initCommands` (que devolve `defineHandler` e `createRunner` tipados), `defineSchedule`, `fail`, `failCommand`, tipos | não |
-| `instant-commands/webhook` (fora da v1) | `createWebhookRoute`, `sweepPending` | não |
+| `instant-commands/serverless` (fora da v1) | `createWebhookRoute`, `sweepPending` | não |
 
-Os pontos de entrada que podem ir ao navegador não importam nada de `worker` nem de `webhook`.
+Os pontos de entrada que podem ir ao navegador não importam nada de `worker` nem de `serverless`. O modo webhook do runner vive em `worker` e usa `db.webhooks` do `@instantdb/admin` (`validateRequest`, `fetchPayloads`, `manager`), sem dependência nova.
 
 ## A ficha: `defineCommand`
 
@@ -334,11 +340,31 @@ const runner = createRunner({
   handlers: [sortearHandler, reabrirGrupoHandler, apagarContaHandler],
   schedules: [estatisticas],
   concurrency: 2,
-  resubscribeEveryMs: 10 * 60 * 1000,
+  trigger: {                                   // padrão: webhook
+    type: "webhook",
+    publicUrl: process.env.WEBHOOK_URL!,       // https://amigo-worker.app.tpou.gy/hook
+    port: Number(process.env.PORT),
+    sweepEveryMs: 5 * 60 * 1000,
+  },
   onEvent: registrarEvento,
 });
 await runner.start();
 process.on("SIGTERM", pararWorker);   // pararWorker chama runner.stop()
+```
+
+**Modos de aviso (`trigger`).** Os dois modos só mudam *como o runner fica sabendo* que há commands pendentes. Checagem, disparo e handlers são os mesmos.
+
+| | `webhook` (padrão) | `subscription` |
+|---|---|---|
+| Aviso | o Instant faz um POST assinado para o worker a cada command criado | o worker assina a consulta de pendentes pelo WebSocket |
+| Durabilidade do aviso | o evento é gravado na mesma transação do command (instantdb-rust) e reenviado pelo calendário do Instant (11 tentativas em ~2 dias e 18 h) | a assinatura reentrega o estado inteiro a cada mudança e ao reassinar |
+| Falha silenciosa | não existe: cada aviso é um POST novo e toda falha vira erro HTTP com nova tentativa | conexão "meio aberta" pode parar de entregar sem erro; coberta pela reassinatura periódica |
+| Rede de segurança | varredura ao subir + varredura periódica (`sweepEveryMs`, padrão 5 min) | reassinatura periódica (`resubscribeEveryMs`, padrão 10 min) |
+| Exige | endereço HTTPS público para o worker (ver Implantação do modo webhook) | nada além do token de admin |
+| Uso | produção na VPS | desenvolvimento local, testes, ou onde não houver endereço público |
+
+```ts
+trigger: { type: "subscription", resubscribeEveryMs: 10 * 60 * 1000 }
 ```
 
 `createRunner` confere, antes de qualquer coisa (erro com mensagem clara):
@@ -350,15 +376,53 @@ As mesmas repetições também são erro de compilação (ver Tipos).
 
 O que `runner.start()` faz:
 1. Registra um workflow no OpenWorkflow para cada handler (nome da ficha, `version` do handler) e cada schedule.
-2. Para cada handler, assina `{ [entity]: { $: { where: { status: { $in: ["pending", "running"] } } } } }`. Cada entrega da assinatura já traz o estado atual, então os pendentes acumulados durante uma queda são processados ao assinar. Não há varredura separada.
-3. Para cada command entregue, dispara um run com `idempotencyKey = command.id`. Se o run com essa chave estiver `failed`, encadeia `<id>:retry:<idDoRunFalho>`, como o `dispararComRetomada` atual.
+2. Liga o aviso:
+   - **`webhook`:**
+     1. `ensureWebhook`: lista os webhooks do app (`db.webhooks.manager.list()`) e procura o de `publicUrl`. Garante que ele está ativo, com `namespaces` = exatamente as entidades dos handlers registrados e `actions: ["create"]`; cria, atualiza ou reativa conforme o caso. Assim, um command novo não exige mexer no Instant, e um webhook desativado (por exemplo por um `410`) volta no próximo reinício.
+     2. Sobe o servidor HTTP com duas rotas, `POST <path de publicUrl>` e `GET /health`.
+     3. Faz a **varredura ao subir**: uma consulta pontual dos `pending`/`running` de cada entidade.
+     4. Agenda a varredura periódica.
+   - **`subscription`:** assina, para cada handler, `{ [entity]: { $: { where: { status: { $in: ["pending", "running"] } } } } }`. Cada entrega já traz o estado atual, então os pendentes acumulados durante uma queda são processados ao assinar.
+3. Para cada command avisado (pelo webhook, pela varredura ou pela assinatura), dispara um run com `idempotencyKey = command.id`. Se o run com essa chave estiver `failed`, encadeia `<id>:retry:<idDoRunFalho>`, como o `dispararComRetomada` atual.
 4. **Checagem antes do handler (primeiro step interno):** relê o command. Se não existe, ou o status não é `pending` nem `running`, o run termina sem escrever nada. Se é `pending`, grava `running` e `attempts + 1`; se já é `running` (retomada depois de uma queda), só `attempts + 1`. Depois valida os campos pelos `i.*` da ficha. Se inválidos, grava `failed` com `defaultErrorMessage` e emite `run.invalid_input`.
-5. Em erro de assinatura, reassina com backoff (1, 2, 5, 10 e 30 s), que zera na primeira entrega bem-sucedida. A cada `resubscribeEveryMs`, reassina tudo, para cobrir conexões meio abertas que nunca dão erro.
-6. Emite eventos estruturados pelo `onEvent`: `subscribed`, `resubscribed`, `delivery`, `run.started`, `run.done`, `run.failed`, `run.skipped`, `run.invalid_input`, `subscription.error`. Os eventos nunca carregam campos do command além do id.
+5. **Na rota do webhook**, para cada POST:
+   1. lê o corpo como texto e valida com `db.webhooks.validateRequest(req)` (assinatura Ed25519, chaves do JWKS, tolerância de horário do SDK). Inválido → `401`, sem mais nada;
+   2. busca o conteúdo com `db.webhooks.fetchPayloads(body)`;
+   3. considera só registros `create` de entidades com handler; os outros são ignorados com `200`;
+   4. dispara cada um (passo 3) e responde `200`.
+   - Erro ao disparar (OpenWorkflow fora) → `503`, e o Instant tenta de novo pelo calendário dele.
+   - **Nunca responde `410`:** o Instant desativaria o webhook.
+   - O tempo de resposta fica bem abaixo dos 20 s do Instant, porque a rota só enfileira.
+   - O conteúdo do aviso é tratado como campainha: só o id é usado, e o command é relido no banco pela checagem do passo 4.
+6. **Na assinatura** (modo `subscription`), em erro, reassina com backoff (1, 2, 5, 10 e 30 s), que zera na primeira entrega bem-sucedida. A cada `resubscribeEveryMs`, reassina tudo, para cobrir conexões meio abertas que nunca dão erro.
+7. Emite eventos estruturados pelo `onEvent`: `webhook.ensured`, `webhook.received`, `webhook.rejected`, `sweep`, `subscribed`, `resubscribed`, `delivery`, `run.started`, `run.done`, `run.failed`, `run.skipped`, `run.invalid_input`, `subscription.error`. Os eventos nunca carregam campos do command além do id.
 
-`runner.stop()` fecha as assinaturas e para o worker do OpenWorkflow, esperando os runs em andamento.
+`runner.stop()` para de aceitar POSTs (ou fecha as assinaturas), cancela a varredura periódica e para o worker do OpenWorkflow, esperando os runs em andamento.
 
-A base é extrair `worker/nucleo/campainha.ts` e `worker/nucleo/disparar.ts`, que já têm testes.
+A base é extrair `worker/nucleo/campainha.ts` (modo `subscription`) e `worker/nucleo/disparar.ts`, que já têm testes.
+
+### Implantação do modo webhook
+
+**Regra: nunca ligar `INSTANT_WEBHOOK_ALLOW_INSECURE` no servidor do Instant.** Ela é global para todos os apps do servidor: com ela, um token de admin vazado de qualquer projeto vira acesso à rede interna da VPS. O Instant faria POSTs para serviços internos, e os primeiros 256 caracteres da resposta ficariam gravados no histórico do evento, legível pelo mesmo token. O próprio instantdb-rust e o `CLAUDE.md` da VPS proíbem a chave em produção.
+
+**Um projeto = um app no Instant = um worker = um domínio = um webhook.** Nada de roteador central de webhooks, pelo mesmo princípio de `plataforma-workflows.md` (nada de OpenWorkflow central).
+
+| Projeto | Worker (Dokku) | `WEBHOOK_URL` |
+|---|---|---|
+| amigo-secreto | `amigo-worker` | `https://amigo-worker.app.tpou.gy/hook` |
+| outro projeto | `<projeto>-worker` | `https://<projeto>-worker.app.tpou.gy/hook` |
+
+- O domínio "bonito" de um projeto (ex.: `amigo.tpou.gy`, o front na Cloudflare) não muda nada. O endereço do worker só é chamado pelo Instant; o navegador nunca fala com o worker.
+- **No Dokku, por projeto:** `ps:scale web=1 worker=0`, `proxy:enable`, `domains:set <projeto>-worker.app.tpou.gy`, `letsencrypt:enable`, `config:set WEBHOOK_URL=…`. Hoje o `amigo-worker` sobe com `proxy:disable` e `web=0 worker=1` (`infra/dokku/provisionar.sh`).
+- **Nginx, por projeto:** `/home/dokku/<projeto>-worker/nginx.conf.d/so-a-vps.conf` com `allow <ip de origem do Instant>; deny all;`, no molde de `docs/decisoes/proxy-cloudflare.md` da VPS. A internet recebe `403`; o Instant, que sai da própria VPS, passa. A assinatura continua como segunda camada. O worker só tem `/hook` e `/health`, então restringir o app inteiro não atrapalha.
+- **Pré-requisito (primeira tarefa do plano): teste de hairpin na VPS.** É um teste para a VPS inteira, não por projeto:
+  1. subir uma rota de eco num app `*.app.tpou.gy` com HTTPS;
+  2. cadastrar um webhook de um app de teste para ela;
+  3. confirmar que a entrega sai do container do Instant e chega pelo IP público da própria VPS;
+  4. anotar o **IP de origem** visto pelo nginx, que vai na regra `allow`.
+  - Se a entrega não chegar, o modo webhook não serve na VPS e o padrão volta a ser `subscription`.
+  - Se chegar mas a origem não puder ser distinguida no nginx, fica sem a regra `allow`/`deny`, só com a assinatura.
+- O resultado do teste e o trecho de nginx viram padrão documentado em `plataforma-workflows.md` da VPS. Esse repositório é do Thomaz: o texto é proposto, não aplicado.
 
 ## Schedules: `defineSchedule`
 
@@ -400,17 +464,15 @@ async function aoClicarSortear(grupoId: string) {
 - **`waitForCommand(db, command, id, { timeoutMs })`:** resolve com o estado final (`done` ou `failed`), ou rejeita no timeout. É para scripts e testes.
 - Funciona com o `db` do `@instantdb/core` e com os pacotes que o envolvem (React, Svelte); usa só `transact` e `subscribeQuery`. Com React, o app também pode usar `db.useQuery` direto na entidade.
 
-## Variante sem processo próprio (webhook), fora da v1
+## Variante serverless, fora da v1
 
-*(escolha minha)* Fica para depois da v1: não se sabe se o instantdb-rust envia webhooks com o mesmo formato e a mesma assinatura do Instant, e a v1 exige comportamento igual nos dois. O desenho fica registrado para quando isso for conferido.
+Diferente do modo `webhook` do runner, aqui não haveria processo de pé. A paridade de webhooks do instantdb-rust está confirmada (`docs/PARITY.md`: entrega, assinatura e retentativas iguais, com teste diferencial dedicado). Fica fora da v1 porque, com o OpenWorkflow, sempre é preciso um worker consultando a fila: a variante só enfileiraria runs, sem ser serverless de verdade. Volta junto com um motor que chama a função por HTTP (Workflow DevKit da Vercel, Inngest), atrás da interface interna de motor.
 
 ```ts
 export const POST = createWebhookRoute({ ow, db, handlers: [sortearHandler, reabrirGrupoHandler] });
 ```
 
-- Valida a assinatura Ed25519 do webhook do Instant e dispara o run do command criado, com os mesmos passos 3 e 4 do runner.
-- Como um webhook perdido não pode deixar o command parado, o app agenda um cron que chama `sweepPending({ ow, db, handlers })`. Essa função faz uma consulta pontual dos `pending`/`running` e dispara cada um.
-- Os workflows precisam de um worker do OpenWorkflow rodando em algum lugar. A variante webhook só substitui a assinatura, não o worker.
+- Reaproveitaria a rota do modo `webhook` (passo 5 do runner) e a varredura como função avulsa (`sweepPending`), chamada por cron.
 
 ## Adoção no amigo-secreto (não decidida)
 
