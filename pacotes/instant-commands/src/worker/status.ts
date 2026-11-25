@@ -1,5 +1,5 @@
-// Status writes of the worker. None of them recreates a deleted command: each queries the id
-// first and writes only if the command still exists.
+// Status writes of the worker. None of them recreates a deleted command nor overwrites a finished
+// one: each queries the id first and writes only if the command still exists and is not terminal.
 import { tx, type InstantAdminDatabase } from "@instantdb/admin";
 import type { Command } from "../command";
 import { CommandResultError } from "../errors";
@@ -12,6 +12,10 @@ type Row = { status: string; attempts?: number | null };
 async function find(db: Db, command: Command, id: string): Promise<Row | undefined> {
   const res = (await db.query({ [command.entity]: { $: { where: { id } } } } as any)) as unknown as Record<string, Row[]>;
   return res[command.entity]?.[0];
+}
+
+function isOpen(row: Row | undefined): row is Row {
+  return row !== undefined && (row.status === "pending" || row.status === "running");
 }
 
 function entityTx(command: Command, id: string): any {
@@ -51,17 +55,20 @@ export async function markRunning(
   return row.status === "running" ? "resumed" : "started";
 }
 
-/** Marks the command `failed`; `false` (and no write) if it no longer exists. */
+/** Marks the command `failed`; `false` (and no write) if it no longer exists or is already `done`/`failed`. */
 export async function markFailed(db: Db, command: Command, id: string, message: string): Promise<boolean> {
-  if (!(await find(db, command, id))) return false;
+  if (!isOpen(await find(db, command, id))) return false;
   await db.transact(failedChunk(command, id, message));
   return true;
 }
 
-/** Marks the command `done` with a validated `result`; `false` (and no write) if it no longer exists. */
+/**
+ * Marks the command `done` with a validated `result`; `false` (and no write) if it no longer exists
+ * or is already `done`/`failed`.
+ */
 export async function markDone(db: Db, command: Command, id: string, result: unknown): Promise<boolean> {
   const chunk = doneChunk(command, id, result);
-  if (!(await find(db, command, id))) return false;
+  if (!isOpen(await find(db, command, id))) return false;
   await db.transact(chunk);
   return true;
 }

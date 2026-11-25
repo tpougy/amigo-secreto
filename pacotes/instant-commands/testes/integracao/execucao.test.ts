@@ -281,4 +281,20 @@ describe("command execution", () => {
     const ev = await esperarEvento(events, cid, "run.failed");
     expect(typeof ev.error).toBe("string");
   });
+
+  test("handler completes in its own transaction and then throws → stays done, run.failed emitted", async () => {
+    const h = defineHandler(sortear, async ({ db, command }) => {
+      await db.transact(command.complete({ pares: 5 }));
+      throw new Error("after complete");
+    });
+    const { engine, events } = await rodar("depois", h);
+    const { cid } = await novoCommand();
+    await engine.dispatch("sortear", cid);
+    const ev = await esperarEvento(events, cid, "run.failed");
+    expect(ev.error).toBe("after complete");
+    const r = await ler(cid);
+    expect(r?.status).toBe("done");
+    expect(r?.result).toEqual({ pares: 5 });
+    expect(r?.error).toBeNull();
+  });
 });

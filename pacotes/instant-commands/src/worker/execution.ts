@@ -81,8 +81,14 @@ export function registerHandler(
     // Each status write and its event live in an internal step: done once, not repeated on replay.
     const failStep = (message: string, error: string) =>
       engineStep.run({ name: "ic:fail" }, async () => {
-        const written = await markFailed(db, command, commandId, message);
-        emit(written ? { type: "run.failed", ...ev, error } : { type: "run.skipped", ...ev });
+        // A deleted command is skipped; one already finished (e.g. by the handler itself) is not
+        // overwritten, but the failure is still reported.
+        if (!(await readRecord(db, command, commandId))) {
+          emit({ type: "run.skipped", ...ev });
+          return null;
+        }
+        await markFailed(db, command, commandId, message);
+        emit({ type: "run.failed", ...ev, error });
         return null;
       });
 

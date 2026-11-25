@@ -84,4 +84,26 @@ describe("status writes", () => {
     expect(await markDone(admin, sortear, cid, { pares: 1 })).toBe(false);
     expect(await ler(cid)).toBeUndefined();
   });
+
+  test("markFailed on a done command → false, stays done", async () => {
+    const cid = await novoCommand();
+    await markRunning(admin, sortear, cid);
+    await markDone(admin, sortear, cid, { pares: 2 });
+    expect(await markFailed(admin, sortear, cid, "boom")).toBe(false);
+    const r = await ler(cid);
+    expect(r?.status).toBe("done");
+    expect(r?.result).toEqual({ pares: 2 });
+    expect(r?.error).toBeNull();
+  });
+
+  test("markDone on a failed command → false, stays failed", async () => {
+    const cid = await novoCommand();
+    await markRunning(admin, sortear, cid);
+    await markFailed(admin, sortear, cid, "boom");
+    expect(await markDone(admin, sortear, cid, { pares: 1 })).toBe(false);
+    const r = await ler(cid);
+    expect(r?.status).toBe("failed");
+    expect(r?.error).toBe("boom");
+    expect(r?.result ?? null).toBeNull();
+  });
 });
