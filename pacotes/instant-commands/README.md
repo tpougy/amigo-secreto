@@ -240,6 +240,9 @@ process.on("SIGTERM", () => void runner.stop().then(() => process.exit(0)));
   `db.transact` as the business write. If the handler returns without calling it, the library
   writes `done` itself, using the returned value as `result`.
 - A command that is already `done` or `failed` is never overwritten by the library.
+- An exception thrown outside any step (directly in the handler's body) fails the command
+  immediately, without retry: only steps are retried.
+- Step names starting with `ic:` are reserved for the library's internal steps.
 
 `defineHandler(command, fn, { version, retryPolicy, defaultErrorMessage })`: `version` is the
 OpenWorkflow workflow version; change it when steps change incompatibly.
@@ -289,7 +292,7 @@ async function onDrawClick(groupId: string) {
 Both only change *how the runner learns* that commands are pending. Checking, dispatching and
 handlers are the same. Set it with `trigger`.
 
-| | `webhook` (default for production) | `subscription` |
+| | `webhook` (recommended for production) | `subscription` |
 |---|---|---|
 | How | Instant POSTs a signed notice to the worker for each created command | the worker subscribes to the pending commands over WebSocket |
 | Needs | a public HTTPS address for the worker | nothing beyond the admin token |
@@ -320,6 +323,12 @@ retries), and never `410` (Instant would disable the webhook). The notice is onl
 is used and the command is re-read from the database.
 
 `runner.port` is the builtin server's port once started (useful with `port: 0`).
+
+`createRunner({ concurrency })` sets how many runs execute at the same time (default `2`).
+
+With `server: "external"`, the route still verifies signatures with the admin SDK: a signature whose
+key id is not yet known makes the SDK fetch Instant's JWKS (`<apiURI>/.well-known/webhooks/jwks.json`,
+then cached per key), so the worker must be able to reach the Instant API.
 
 `onEvent(event)` receives structured events (`webhook.ensured`, `webhook.received`,
 `webhook.rejected`, `sweep`, `subscribed`, `resubscribed`, `delivery`, `run.started`, `run.done`,
@@ -377,7 +386,8 @@ the event history, readable with the same token).
 - **`result` Standard Schemas must validate synchronously.** A schema that returns a `Promise` is a
   definition error.
 - **An invalid result from `command.complete()` inside a step surfaces only after that step's
-  retries.** Call `validateResult(command, value)` first to fail fast.
+  retries.** Call `validateResult(command, value)` (imported from `instant-commands`, the root entry
+  point) first to fail fast.
 - **`onEvent` may receive exception messages.** Treat it as sensitive (logs, not the client). Do not
   rely on it to throw: exceptions in it are swallowed.
 - **A failed `runner.start()` cannot be retried in the same process.** Restart the process.

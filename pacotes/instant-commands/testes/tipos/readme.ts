@@ -1,7 +1,7 @@
 // The README's main example, file by file, with imports pointing at src/ (the README uses the
 // package names). Compiled by `tsc --noEmit -p .`; keep it in sync with README.md.
 import { i, init as initClient } from "@instantdb/core";
-import { init as initAdmin, type InstantAdminDatabase } from "@instantdb/admin";
+import { init as initAdmin } from "@instantdb/admin";
 import { OpenWorkflow } from "openworkflow";
 import { BackendSqlite } from "openworkflow/sqlite";
 import { z } from "zod";
@@ -80,7 +80,7 @@ export const { defineHandler, defineSchedule, createRunner } = icWorker.initComm
 export type Ctx<C extends icWorker.Command> = icWorker.HandlerContext<C, AppSchema>;
 
 // ---- worker/handlers/draw.ts -----------------------------------------------------------------
-async function loadGroup(db: InstantAdminDatabase<AppSchema>, drawId: string) {
+async function loadGroup(db: Ctx<typeof draw>["db"], drawId: string) {
   const { draws } = await db.query({ draws: { $: { where: { id: drawId } }, group: {} } });
   return draws[0]?.group ?? null;
 }
@@ -120,7 +120,7 @@ function logEvent(event: icWorker.RunnerEvent) {
   console.log(JSON.stringify(event));
 }
 
-export const runner = createRunner({
+const runner = createRunner({
   ow,
   db,
   handlers: [drawHandler],
@@ -148,6 +148,6 @@ export async function onDrawClick(groupId: string) {
   return final;
 }
 
-export async function main() {
-  await runner.start();
-}
+// This file is only compiled, never executed.
+await runner.start();
+process.on("SIGTERM", () => void runner.stop().then(() => process.exit(0)));
