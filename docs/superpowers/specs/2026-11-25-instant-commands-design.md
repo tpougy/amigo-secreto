@@ -342,7 +342,7 @@ const runner = createRunner({
   concurrency: 2,
   trigger: {                                   // padrão: webhook
     type: "webhook",
-    publicUrl: process.env.WEBHOOK_URL!,       // https://amigo-worker.app.tpou.gy/hook
+    publicUrl: process.env.WEBHOOK_URL!,       // https://amigo-worker.app.tpou.gy/ic/hook
     port: Number(process.env.PORT),
     sweepEveryMs: 5 * 60 * 1000,
   },
@@ -385,7 +385,7 @@ O que `runner.start()` faz:
    - **`subscription`:** assina, para cada handler, `{ [entity]: { $: { where: { status: { $in: ["pending", "running"] } } } } }`. Cada entrega já traz o estado atual, então os pendentes acumulados durante uma queda são processados ao assinar.
 3. Para cada command avisado (pelo webhook, pela varredura ou pela assinatura), dispara um run com `idempotencyKey = command.id`. Se o run com essa chave estiver `failed`, encadeia `<id>:retry:<idDoRunFalho>`, como o `dispararComRetomada` atual.
 4. **Checagem antes do handler (primeiro step interno):** relê o command. Se não existe, ou o status não é `pending` nem `running`, o run termina sem escrever nada. Se é `pending`, grava `running` e `attempts + 1`; se já é `running` (retomada depois de uma queda), só `attempts + 1`. Depois valida os campos pelos `i.*` da ficha. Se inválidos, grava `failed` com `defaultErrorMessage` e emite `run.invalid_input`.
-5. **Na rota do webhook**, para cada POST:
+5. **Na rota do webhook** (`runner.webhookHandler`; ver Servidor do modo webhook), para cada POST:
    1. lê o corpo como texto e valida com `db.webhooks.validateRequest(req)` (assinatura Ed25519, chaves do JWKS, tolerância de horário do SDK). Inválido → `401`, sem mais nada;
    2. busca o conteúdo com `db.webhooks.fetchPayloads(body)`;
    3. considera só registros `create` de entidades com handler; os outros são ignorados com `200`;
@@ -401,6 +401,71 @@ O que `runner.start()` faz:
 
 A base é extrair `worker/nucleo/campainha.ts` (modo `subscription`) e `worker/nucleo/disparar.ts`, que já têm testes.
 
+### Servidor do modo webhook
+
+A rota do webhook é da biblioteca: o app não escreve servidor nem rota. O servidor é o `Bun.serve` embutido, com `routes`, sem dependência de framework. Ele entrega `Request`/`Response` padrão, que é o que `db.webhooks.validateRequest(req)` espera.
+
+**Opções de `trigger` no modo webhook e seus padrões** (só `publicUrl` é obrigatório):
+
+| Opção | Padrão | Por quê |
+|---|---|---|
+| `publicUrl` | obrigatório | o endereço cadastrado no Instant |
+| caminho da rota | o caminho de `publicUrl` | uma fonte só: a rota servida é sempre a cadastrada |
+| `server` | `"builtin"` | ver abaixo |
+| `port` | `process.env.PORT`, ou `3000` | o Dokku injeta `PORT` |
+| `healthPath` | `/health` | o checks do Dokku no deploy sem interrupção |
+| `sweepEveryMs` | 5 min | a varredura periódica |
+| `maxBodyBytes` | 64 KB | o aviso do Instant só traz `{ payloadUrl, token }` |
+
+**Convenção de caminho:** `/ic/hook`, por exemplo `https://amigo-worker.app.tpou.gy/ic/hook`. `ic` é o apelido do pacote (ver Convenção de import).
+
+**`server: "builtin" | "external"`**
+- **`"builtin"` (padrão):** `runner.start()` sobe um `Bun.serve` com `POST <caminho>` e `GET <healthPath>`; qualquer outra rota responde `404`. `runner.stop()` chama `server.stop()`, que para de aceitar conexões e espera as em andamento.
+- **`"external"`:** o runner não sobe servidor. Ele cadastra o webhook e liga as varreduras, e expõe `runner.webhookHandler: (req: Request) => Promise<Response>` para o app montar no servidor que já tem (Bun, Hono, Next, Cloudflare). O tamanho máximo do corpo e o `/health` passam a ser do app.
+
+```ts
+// modo external: a rota pendurada no servidor do próprio app
+await runner.start();
+Bun.serve({
+  routes: {
+    "/ic/hook": { POST: runner.webhookHandler },
+    "/api/outra-coisa": { GET: outraRota },
+  },
+});
+```
+
+`runner.webhookHandler` é a mesma função nos dois modos (o `"builtin"` só a monta). É ela que a variante serverless reaproveitaria.
+
+**Detalhes da rota:**
+- o corpo é lido **só** por `validateRequest`: um `Request` só pode ser lido uma vez, e a verificação precisa dos bytes exatos;
+- corpo acima de `maxBodyBytes` → `413`, antes de qualquer verificação.
+
+### Convenção de import
+
+A documentação e os exemplos usam o apelido `ic`, com import de namespace, para que o uso deixe claro o que vem da biblioteca:
+
+```ts
+// pacotes/instant/commands/sortear.ts
+import * as ic from "instant-commands";
+export const sortear = ic.defineCommand({ ... });
+
+// worker/handlers/sortear.ts
+import * as ic from "instant-commands/worker";
+async function executarSorteio({ db, command, step }: HandlerContext<typeof sortear>) {
+  const grupo = await step.run("carregar", carregarGrupo, db, command.id);
+  if (!grupo) ic.fail("O grupo não existe mais");   // estreita o tipo de `grupo`
+  ...
+}
+
+// app (navegador)
+import * as ic from "instant-commands/client";
+const id = await ic.sendCommand(db, sortear, { ... });
+```
+
+- Cada arquivo importa um único ponto de entrada, então o mesmo apelido `ic` não colide.
+- `ic.fail(...)` estreita o tipo depois do `if`, assim como o `fail` importado por nome (conferido com TypeScript 6.0.3). Só não funciona desestruturado do contexto.
+- O apelido é convenção de documentação; importar por nome continua funcionando.
+
 ### Implantação do modo webhook
 
 **Regra: nunca ligar `INSTANT_WEBHOOK_ALLOW_INSECURE` no servidor do Instant.** Ela é global para todos os apps do servidor: com ela, um token de admin vazado de qualquer projeto vira acesso à rede interna da VPS. O Instant faria POSTs para serviços internos, e os primeiros 256 caracteres da resposta ficariam gravados no histórico do evento, legível pelo mesmo token. O próprio instantdb-rust e o `CLAUDE.md` da VPS proíbem a chave em produção.
@@ -409,12 +474,12 @@ A base é extrair `worker/nucleo/campainha.ts` (modo `subscription`) e `worker/n
 
 | Projeto | Worker (Dokku) | `WEBHOOK_URL` |
 |---|---|---|
-| amigo-secreto | `amigo-worker` | `https://amigo-worker.app.tpou.gy/hook` |
-| outro projeto | `<projeto>-worker` | `https://<projeto>-worker.app.tpou.gy/hook` |
+| amigo-secreto | `amigo-worker` | `https://amigo-worker.app.tpou.gy/ic/hook` |
+| outro projeto | `<projeto>-worker` | `https://<projeto>-worker.app.tpou.gy/ic/hook` |
 
 - O domínio "bonito" de um projeto (ex.: `amigo.tpou.gy`, o front na Cloudflare) não muda nada. O endereço do worker só é chamado pelo Instant; o navegador nunca fala com o worker.
 - **No Dokku, por projeto:** `ps:scale web=1 worker=0`, `proxy:enable`, `domains:set <projeto>-worker.app.tpou.gy`, `letsencrypt:enable`, `config:set WEBHOOK_URL=…`. Hoje o `amigo-worker` sobe com `proxy:disable` e `web=0 worker=1` (`infra/dokku/provisionar.sh`).
-- **Nginx, por projeto:** `/home/dokku/<projeto>-worker/nginx.conf.d/so-a-vps.conf` com `allow <ip de origem do Instant>; deny all;`, no molde de `docs/decisoes/proxy-cloudflare.md` da VPS. A internet recebe `403`; o Instant, que sai da própria VPS, passa. A assinatura continua como segunda camada. O worker só tem `/hook` e `/health`, então restringir o app inteiro não atrapalha.
+- **Nginx, por projeto:** `/home/dokku/<projeto>-worker/nginx.conf.d/so-a-vps.conf` com `allow <ip de origem do Instant>; deny all;`, no molde de `docs/decisoes/proxy-cloudflare.md` da VPS. A internet recebe `403`; o Instant, que sai da própria VPS, passa. A assinatura continua como segunda camada. O worker só tem `/ic/hook` e `/health`, então restringir o app inteiro não atrapalha.
 - **Pré-requisito (primeira tarefa do plano): teste de hairpin na VPS.** É um teste para a VPS inteira, não por projeto:
   1. subir uma rota de eco num app `*.app.tpou.gy` com HTTPS;
   2. cadastrar um webhook de um app de teste para ela;
