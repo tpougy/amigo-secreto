@@ -34,7 +34,9 @@ export function validateInput(command: Command, values: Record<string, unknown>,
   const problems: string[] = [];
   for (const [name, def] of Object.entries(command.fields ?? {})) {
     const v = values[name];
-    if (v === undefined || v === null) {
+    // `json` accepts anything but `undefined`, `null` included.
+    const missing = v === undefined || (v === null && def.valueType !== "json");
+    if (missing) {
       if (def.required) problems.push(`${name}: required`);
     } else if (!matchesType(def.valueType, v)) {
       problems.push(`${name}: expected ${def.valueType}`);

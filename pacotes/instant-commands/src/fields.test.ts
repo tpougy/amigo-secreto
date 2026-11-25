@@ -43,3 +43,16 @@ test("validateInput optional may be absent; boolean and json checked", () => {
   expect(validateInput(c, { b: { x: 1 } }, "worker")).toEqual([]);
   expect(validateInput(c, { a: "t", b: undefined }, "worker")).toHaveLength(2);
 });
+
+test("a required json field accepts null; only undefined is missing", () => {
+  const c = defineCommand({
+    name: "j",
+    entity: "js",
+    fields: { payload: i.json(), name: i.string() },
+    allow: { create: "true", view: "true" },
+  });
+  expect(validateInput(c, { payload: null, name: "n" }, "worker")).toEqual([]);
+  expect(validateInput(c, { name: "n" }, "worker")).toEqual(["payload: required"]);
+  // Other types still treat null as missing.
+  expect(validateInput(c, { payload: 1, name: null }, "worker")).toEqual(["name: required"]);
+});
