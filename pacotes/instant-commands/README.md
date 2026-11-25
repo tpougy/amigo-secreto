@@ -381,7 +381,8 @@ the event history, readable with the same token).
   same name. `mergePerms` catches the entity when it has rules, but not a link or an entity without
   rules. Do not reuse names.
 - **TypeScript 6.0.x with `@instantdb/core` 1.0.67** types attribute values in query results as
-  `any` (entity names and keys stay typed). With TypeScript 5.9 they are fully typed.
+  `any` (entity names and keys stay typed). With TypeScript 5.9 they are fully typed; this
+  package's own type tests run under TypeScript 5.9.3.
 - **Use the `defineSchedule` returned by `initCommands`**: it gets compile-time name checks against
   the handlers' commands.
 - Type a handler declared as a separate function with the `Ctx` alias above:

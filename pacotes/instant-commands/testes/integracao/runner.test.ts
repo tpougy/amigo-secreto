@@ -110,8 +110,7 @@ describe("runner (subscription mode)", () => {
       run: async ({ db, step }) => {
         const titulo = await step.run("ler", async () => {
           const { grupos } = await db.query({ grupos: { $: { where: { id: grupoId } } } });
-          const t: string | undefined = grupos[0]?.titulo;
-          return t ?? null;
+          return grupos[0]?.titulo ?? null;
         });
         if (titulo) titulos.push(titulo);
       },

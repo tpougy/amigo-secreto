@@ -17,8 +17,10 @@ const { defineHandler, createRunner, defineSchedule: defineAppSchedule } = initC
 // The context's db carries the app schema.
 const h1 = defineHandler(sortear, async ({ db }) => {
   const { grupos } = await db.query({ grupos: {} });
-  // (attribute values of the test schema come out as `any`; the entity's shape is what is checked)
-  yes<Eq<keyof (typeof grupos)[number], "id" | "status" | "titulo">>();
+  type Row = (typeof grupos)[number];
+  yes<Eq<keyof Row, "id" | "status" | "titulo">>();
+  // Attribute values are typed (TypeScript 5.9; under 6.0 they would be `any`).
+  yes<Eq<Row["titulo"], string>>();
   // @ts-expect-error not an entity of the schema
   await db.query({ naoExiste: {} });
   return { pares: grupos.length };
@@ -30,6 +32,7 @@ type Ctx<C extends Command> = ic.HandlerContext<C, TestSchema>;
 async function executar(ctx: Ctx<typeof sortear>) {
   const { grupos } = await ctx.db.query({ grupos: {} });
   yes<Eq<keyof (typeof grupos)[number], "id" | "status" | "titulo">>();
+  yes<Eq<(typeof grupos)[number]["titulo"], string>>();
   return { pares: grupos.length + ctx.command.rodada };
 }
 const h2 = defineHandler(sortear, executar);
@@ -54,6 +57,7 @@ const contar = defineSchedule<TestSchema>({
   run: async ({ db, step }) => {
     const { grupos } = await db.query({ grupos: {} });
     yes<Eq<keyof (typeof grupos)[number], "id" | "status" | "titulo">>();
+    yes<Eq<(typeof grupos)[number]["status"], string>>();
     return step.run("n", () => grupos.length);
   },
 });
