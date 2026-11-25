@@ -386,7 +386,7 @@ O que `runner.start()` faz:
 3. Para cada command avisado (pelo webhook, pela varredura ou pela assinatura), dispara um run com `idempotencyKey = command.id`. Se o run com essa chave estiver `failed`, encadeia `<id>:retry:<idDoRunFalho>`, como o `dispararComRetomada` atual.
 4. **Checagem antes do handler (primeiro step interno):** relê o command. Se não existe, ou o status não é `pending` nem `running`, o run termina sem escrever nada. Se é `pending`, grava `running` e `attempts + 1`; se já é `running` (retomada depois de uma queda), só `attempts + 1`. Depois valida os campos pelos `i.*` da ficha. Se inválidos, grava `failed` com `defaultErrorMessage` e emite `run.invalid_input`.
 5. **Na rota do webhook** (`runner.webhookHandler`; ver Servidor do modo webhook), para cada POST:
-   1. lê o corpo como texto e valida com `db.webhooks.validateRequest(req)` (assinatura Ed25519, chaves do JWKS, tolerância de horário do SDK). Inválido → `401`, sem mais nada;
+   1. lê o corpo uma vez como texto, com o limite `maxBodyBytes` aplicado na leitura qualquer que seja o `content-length` (acima → `413`), e valida com `db.webhooks.validate(cabeçalho instant-signature, texto)` (assinatura Ed25519, chaves do JWKS, tolerância de horário do SDK). Inválido ou sem cabeçalho → `401`, sem mais nada;
    2. busca o conteúdo com `db.webhooks.fetchPayloads(body)`;
    3. considera só registros `create` de entidades com handler; os outros são ignorados com `200`;
    4. dispara cada um (passo 3) e responde `200`.

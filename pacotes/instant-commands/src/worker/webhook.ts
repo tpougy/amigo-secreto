@@ -8,20 +8,32 @@ type Db = InstantAdminDatabase<any, any>;
 
 const text = (status: number, body: string) => new Response(body, { status });
 
-/** Reads the body; `false` as soon as it passes `max` bytes. */
-async function readLimited(body: ReadableStream<Uint8Array> | null, max: number): Promise<boolean> {
-  if (!body) return true;
+/**
+ * Reads the body as UTF-8 text; `null` as soon as it passes `max` bytes. Headers are not trusted:
+ * the limit holds for any `content-length`, a missing or malformed one included.
+ */
+async function readLimited(body: ReadableStream<Uint8Array> | null, max: number): Promise<string | null> {
+  if (!body) return "";
   const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
   let total = 0;
   for (;;) {
     const { done, value } = await reader.read();
-    if (done) return true;
+    if (done) break;
     total += value.byteLength;
     if (total > max) {
       await reader.cancel();
-      return false;
+      return null;
     }
+    chunks.push(value);
   }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    bytes.set(c, offset);
+    offset += c.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
 }
 
 /**
@@ -40,15 +52,14 @@ export function createWebhookHandler(options: {
   const byEntity = new Map(commands.map((c) => [c.entity, c.name]));
 
   return async (req) => {
-    const declared = req.headers.get("content-length");
-    if (declared !== null && Number(declared) > maxBodyBytes) return text(413, "Payload too large");
-
-    // Validation consumes the body; a chunked one is measured on a clone first.
-    if (declared === null && !(await readLimited(req.clone().body, maxBodyBytes))) return text(413, "Payload too large");
+    // A declared length over the limit is refused without reading; the read itself is always limited.
+    if (Number(req.headers.get("content-length")) > maxBodyBytes) return text(413, "Payload too large");
+    const raw = await readLimited(req.body, maxBodyBytes);
+    if (raw === null) return text(413, "Payload too large");
 
     let body;
     try {
-      body = await db.webhooks.validateRequest(req);
+      body = await db.webhooks.validate(req.headers.get("instant-signature") ?? "", raw);
     } catch {
       emit({ type: "webhook.rejected" });
       return text(401, "Invalid signature");

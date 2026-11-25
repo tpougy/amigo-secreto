@@ -43,7 +43,7 @@ function fakeDb(opts: { hooks?: Hook[]; queryFails?: boolean } = {}) {
       return Object.fromEntries(Object.keys(q).map((k) => [k, []]));
     },
     webhooks: {
-      validateRequest: async () => {
+      validate: async () => {
         calls.validate++;
         return { payloadUrl: "u", token: "t" };
       },

@@ -13,11 +13,14 @@ function setup(opts: { records?: Rec[]; invalid?: boolean; fetchFails?: boolean;
   const dispatched: [string, string][] = [];
   const events: RunnerEvent[] = [];
   let validated = 0;
+  const seen: { header: string; body: string }[] = [];
   const db = {
     webhooks: {
-      validateRequest: async () => {
+      // Like the SDK: an empty header does not parse.
+      validate: async (header: string, body: string) => {
         validated++;
-        if (opts.invalid) throw new Error("bad signature");
+        seen.push({ header, body });
+        if (opts.invalid || header === "") throw new Error("bad signature");
         return { payloadUrl: "u", token: "t" };
       },
       fetchPayloads: async () => {
@@ -33,11 +36,26 @@ function setup(opts: { records?: Rec[]; invalid?: boolean; fetchFails?: boolean;
     },
   } as unknown as Engine;
   const handler = createWebhookHandler({ db, engine, commands: [cmd], maxBodyBytes: opts.max ?? 1000, emit: (e) => events.push(e) });
-  return { handler, dispatched, events, validated: () => validated };
+  return { handler, dispatched, events, seen, validated: () => validated };
 }
 
 const post = (body = "{}", headers: Record<string, string> = {}) =>
-  new Request("http://x/ic/hook", { method: "POST", body, headers });
+  new Request("http://x/ic/hook", { method: "POST", body, headers: { "instant-signature": "t=1,kid=k,v1=ab", ...headers } });
+
+function chunked(...parts: string[]) {
+  const stream = new ReadableStream({
+    start(c) {
+      for (const p of parts) c.enqueue(new TextEncoder().encode(p));
+      c.close();
+    },
+  });
+  return new Request("http://x/ic/hook", {
+    method: "POST",
+    body: stream,
+    duplex: "half",
+    headers: { "instant-signature": "t=1,kid=k,v1=ab" },
+  } as any);
+}
 const rec = (namespace: string, action: string, id = "c1"): Rec => ({ namespace, id, action });
 
 describe("webhook handler", () => {
@@ -81,17 +99,50 @@ describe("webhook handler", () => {
 
   test("chunked body over maxBodyBytes → 413", async () => {
     const s = setup({ max: 10 });
-    const stream = new ReadableStream({
-      start(c) {
-        c.enqueue(new TextEncoder().encode("x".repeat(8)));
-        c.enqueue(new TextEncoder().encode("x".repeat(8)));
-        c.close();
-      },
-    });
-    const req = new Request("http://x/ic/hook", { method: "POST", body: stream, duplex: "half" } as any);
+    const req = chunked("x".repeat(8), "x".repeat(8));
     expect(req.headers.get("content-length")).toBeNull();
     expect((await s.handler(req)).status).toBe(413);
     expect(s.validated()).toBe(0);
+  });
+
+  test("chunked body under the limit reaches validation byte for byte", async () => {
+    const s = setup({ max: 100, records: [rec("sortear_cmds", "create")] });
+    const body = '{"payloadUrl":"é","token":"ü"}';
+    const bytes = new TextEncoder().encode(body);
+    // Split inside a multi-byte character.
+    const cut = body.indexOf("é") + 1;
+    const req = new Request("http://x/ic/hook", {
+      method: "POST",
+      body: new ReadableStream({
+        start(c) {
+          c.enqueue(bytes.slice(0, cut));
+          c.enqueue(bytes.slice(cut));
+          c.close();
+        },
+      }),
+      duplex: "half",
+      headers: { "instant-signature": "t=1,kid=k,v1=ab" },
+    } as any);
+    expect((await s.handler(req)).status).toBe(200);
+    expect(s.seen).toEqual([{ header: "t=1,kid=k,v1=ab", body }]);
+  });
+
+  for (const bad of ["abc", "1, 1", "-5"]) {
+    test(`invalid content-length "${bad}" with an oversized body → 413`, async () => {
+      const s = setup({ max: 10 });
+      const req = chunked("x".repeat(50));
+      req.headers.set("content-length", bad);
+      expect((await s.handler(req)).status).toBe(413);
+      expect(s.validated()).toBe(0);
+    });
+  }
+
+  test("missing signature header → 401", async () => {
+    const s = setup({ records: [rec("sortear_cmds", "create")] });
+    const res = await s.handler(new Request("http://x/ic/hook", { method: "POST", body: "{}" }));
+    expect(res.status).toBe(401);
+    expect(s.seen).toEqual([{ header: "", body: "{}" }]);
+    expect(s.dispatched).toEqual([]);
   });
 });
 
