@@ -4,22 +4,22 @@
 // "Membro" de um grupo = usuário ligado a um participante do grupo (ou o organizador).
 // Não-membros só enxergam um grupo (e os campos dele) informando o código certo via
 // `ruleParams.codigo`, o que impede enumerar grupos.
+//
+// As regras de `sorteios`, `reaberturas` e `pedidosExclusao` (e os lados reversos dos links deles
+// em `grupos` e `$users`, e os `$rateLimits` `sorteios`/`reaberturas`) saem dos commands
+// (commands.ts), via `mergePerms`.
 import type { InstantRules } from "@instantdb/core";
+import { mergePerms } from "instant-commands/perms";
+import { commands, emAberto } from "./commands";
 import type { AppSchema } from "./schema";
+
+export { emAberto };
 
 const rules = {
   $rateLimits: {
     // Entradas em grupos: 20 tentativas, recarga de 20 por hora (cobra também as negadas).
     entrada: {
       limits: [{ capacity: 20, refill: { amount: 20, period: "1 hour", type: "greedy" } }],
-    },
-    // Pedidos de sorteio: 5 por hora por usuário (cobra também os negados).
-    sorteio: {
-      limits: [{ capacity: 5, refill: { amount: 5, period: "1 hour", type: "greedy" } }],
-    },
-    // Pedidos de reabertura: 5 por hora por usuário (cobra também os negados).
-    reabertura: {
-      limits: [{ capacity: 5, refill: { amount: 5, period: "1 hour", type: "greedy" } }],
     },
   },
 
@@ -45,14 +45,12 @@ const rules = {
       update: "ehOrganizador && !camposProtegidos && statusPermitido",
       delete: "ehOrganizador",
       // Os lados "filhos" (campos, participantes, restrições) têm as próprias regras de link;
-      // aqui só se protege a troca de organizador.
+      // aqui só se protege a troca de organizador. `sorteios`/`reaberturas` vêm de `mergePerms`.
       link: {
         organizador: "actions.data == 'create' && auth.id == linkedData.id",
         participantes: "true",
         campos: "true",
         restricoes: "true",
-        sorteios: "true",
-        reaberturas: "true",
         // Capa: só o organizador liga/desliga; o lado do arquivo confere o path (ver $files).
         capa: "ehOrganizador",
       },
@@ -61,8 +59,6 @@ const rules = {
         participantes: "true",
         campos: "true",
         restricoes: "true",
-        sorteios: "true",
-        reaberturas: "true",
         capa: "ehOrganizador",
       },
     },
@@ -102,10 +98,9 @@ const rules = {
         "request.modifiedFields.all(f, f in ['apelido', 'perfilCompleto', 'viuParNaRodada', 'removido', 'removidoNaRodada']) && removidoSoTrue",
       soCamposDoOrganizador:
         "request.modifiedFields.all(f, f in ['removido', 'removidoNaRodada']) && removidoSoTrue",
-      // Ninguém entra enquanto um sorteio do grupo está pendente/processando (o worker também
-      // confere, em `gravar-pares`, que os participantes não mudaram desde o `carregar`).
-      semSorteioEmAndamento:
-        "!('pendente' in data.ref('grupo.sorteios.status')) && !('processando' in data.ref('grupo.sorteios.status'))",
+      // Ninguém entra enquanto um sorteio do grupo está aberto (`pending`/`running`; o worker
+      // também confere, em `gravar-pares`, que os participantes não mudaram desde o `carregar`).
+      semSorteioEmAndamento: `!${emAberto("grupo.sorteios.status")}`,
     },
     allow: {
       view: "ehMembro || ehOrganizador",
@@ -187,48 +182,15 @@ const rules = {
     },
   },
 
-  sorteios: {
-    bind: {
-      ehOrganizador: "auth.id != null && auth.id in data.ref('grupo.organizador.id')",
-      ehMembro: "auth.id != null && auth.id in data.ref('grupo.participantes.usuario.id')",
-      // Rodada seguinte à atual, no máximo 3 por abertura (rodada − rodadaBase ≤ 3, com
-      // rodadaBase ausente = 0: grupos antigos não têm o atributo e o ref volta vazio ou [null]).
-      // Como rodadaBase ≥ 0, `rodada <= 3` já basta quando cabe. A chave <grupoId>:<rodada>
-      // garante um pedido por rodada.
-      rodadaValida:
-        "(data.rodada <= 3 || data.ref('grupo.rodadaBase').exists(b, b != null && data.rodada - b <= 3)) && (data.rodada - 1) in data.ref('grupo.rodadaAtual')",
-      chaveCerta:
-        "size(data.ref('grupo.id')) == 1 && data.chave == data.ref('grupo.id')[0] + ':' + string(int(data.rodada))",
-      grupoNaoEncerrado: "!('encerrado' in data.ref('grupo.status'))",
-      // Com uma reabertura pendente, o sorteio espera: senão a reabertura apagaria os pares novos.
-      semReaberturaPendente: "!('pendente' in data.ref('grupo.reaberturas.status'))",
-    },
-    allow: {
-      view: "ehMembro || ehOrganizador",
-      // rateLimit primeiro: todo pedido (inclusive negado) gasta um token.
-      create:
-        "rateLimit.sorteio.limit(auth.id) && ehOrganizador && data.status == 'pendente' && rodadaValida && chaveCerta && grupoNaoEncerrado && semReaberturaPendente",
-      // Status, erro, conclusão e pares: só o worker (admin).
-      update: "false",
-      // O servidor checa `delete` também nos filhos apagados em cascata: sem isso o
-      // organizador não consegue apagar o grupo depois do sorteio. Não lhe dá poder novo
-      // (ele já pode apagar o grupo inteiro) nem revela pares.
-      delete: "ehOrganizador",
-      link: {
-        grupo: "actions.data == 'create' && auth.id in linkedData.ref('organizador.id')",
-        pares: "false",
-      },
-      unlink: { grupo: "false", pares: "false" },
-    },
-  },
-
   // Cada um vê só o próprio par (em que é o doador). Escrita só pelo worker (admin).
   pares: {
     allow: {
       view: "auth.id != null && auth.id in data.ref('doador.usuario.id')",
       create: "false",
       update: "false",
-      // Só para a cascata de "organizador apaga o grupo" (ver sorteios.delete).
+      // Só para a cascata de "organizador apaga o grupo" (ver `sorteio.allow.delete` em commands.ts).
+      // Os links com o sorteio são o único bloqueio de cliente para `parSorteio` (o lado do
+      // sorteio é gerado por `mergePerms`, que não aceita regras de links alheios ao command).
       delete: "auth.id != null && auth.id in data.ref('sorteio.grupo.organizador.id')",
       link: { sorteio: "false", doador: "false", receptor: "false" },
       unlink: { sorteio: "false", doador: "false", receptor: "false" },
@@ -253,47 +215,6 @@ const rules = {
       delete: "organizaPeloPath",
       // Só liga a um grupo o arquivo do path desse grupo (o lado `grupos.capa` exige o organizador).
       link: { grupoCapa: "data.path.startsWith('grupos/' + linkedData.id + '/')" },
-    },
-  },
-
-  // Pedido de reabertura (desfazer o sorteio): só o organizador cria, com o grupo `sorteado` e
-  // sem sorteio em andamento; membros e o organizador veem; o worker (admin) executa e marca
-  // `concluido`/`erro`. Imutável para o cliente (fora a cascata de apagar o grupo).
-  reaberturas: {
-    bind: {
-      ehOrganizador: "auth.id != null && auth.id in data.ref('grupo.organizador.id')",
-      ehMembro: "auth.id != null && auth.id in data.ref('grupo.participantes.usuario.id')",
-      grupoSorteado: "'sorteado' in data.ref('grupo.status')",
-      semSorteioEmAndamento:
-        "!('pendente' in data.ref('grupo.sorteios.status')) && !('processando' in data.ref('grupo.sorteios.status'))",
-    },
-    allow: {
-      view: "ehMembro || ehOrganizador",
-      // rateLimit primeiro: todo pedido (inclusive negado) gasta um token.
-      create:
-        "rateLimit.reabertura.limit(auth.id) && ehOrganizador && data.status == 'pendente' && grupoSorteado && semSorteioEmAndamento",
-      update: "false",
-      // Como em sorteios.delete: o servidor checa `delete` também nos filhos apagados em cascata
-      // (avaliado no estado anterior, com o grupo ainda ligado), então sem isso o organizador não
-      // apaga o grupo depois de reabrir. Não lhe dá poder novo: ele já pode apagar o grupo inteiro.
-      delete: "ehOrganizador",
-      link: {
-        grupo: "actions.data == 'create' && auth.id in linkedData.ref('organizador.id')",
-      },
-      unlink: { grupo: "false" },
-    },
-  },
-
-  // Pedido de exclusão de conta: o próprio usuário cria (ligado ao próprio $users) e vê; o
-  // worker (admin) executa e marca `concluido`. Imutável para o cliente.
-  pedidosExclusao: {
-    allow: {
-      view: "auth.id != null && auth.id in data.ref('usuario.id')",
-      create: "auth.id != null && auth.id in data.ref('usuario.id') && data.status == 'pendente'",
-      update: "false",
-      delete: "false",
-      link: { usuario: "actions.data == 'create' && auth.id == linkedData.id" },
-      unlink: { usuario: "false" },
     },
   },
 
@@ -326,4 +247,4 @@ const regrasStreams = {
   },
 };
 
-export default { ...rules, ...regrasStreams };
+export default { ...mergePerms(rules, commands), ...regrasStreams };
