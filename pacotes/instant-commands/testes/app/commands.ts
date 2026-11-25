@@ -1,11 +1,15 @@
 // The test app's own commands (adapted from the spec): `sortear` and `reabrir`.
+import { i } from "@instantdb/core";
 import { z } from "zod";
 import { defineCommand } from "../../src/index";
 
 export const sortear = defineCommand({
   name: "sortear",
   entity: "sorteios",
-  fields: {},
+  fields: {
+    rodada: i.number(),
+    chave: i.string().unique(),
+  },
   links: {
     sorteioGrupo: {
       forward: { on: "sorteios", has: "one", label: "grupo", onDelete: "cascade" },
@@ -16,7 +20,7 @@ export const sortear = defineCommand({
     ehOrganizador: "auth.id in data.ref('grupo.organizador.id')",
   },
   allow: {
-    create: "ehOrganizador",
+    create: "ehOrganizador && data.rodada > 0",
     view: "ehOrganizador",
     delete: "ehOrganizador",
     link: { grupo: "auth.id in linkedData.ref('organizador.id')" },

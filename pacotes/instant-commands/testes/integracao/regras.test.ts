@@ -30,7 +30,7 @@ async function esperarNegado(p: Promise<unknown>) {
 function criarSorteio(u: Usuario, grupoId: string, sorteioId = id(), extra: Record<string, unknown> = {}) {
   return u.db.transact(
     u.db.tx.sorteios[sorteioId]!
-      .create({ status: "pending", attempts: 0, createdAt: Date.now(), ...extra })
+      .create({ status: "pending", attempts: 0, createdAt: Date.now(), rodada: 1, chave: `${grupoId}:${sorteioId}`, ...extra })
       .link({ grupo: grupoId }),
   );
 }
@@ -62,6 +62,13 @@ describe("generated rules", () => {
     const grupoId = await criarGrupo(PREFIXO, org);
     await esperarNegado(criarSorteio(org, grupoId, id(), { status: "done" }));
     await esperarNegado(criarSorteio(org, grupoId, id(), { attempts: 1 }));
+    expect(await sorteiosDe(grupoId)).toEqual([]);
+  });
+
+  test("cannot create with rodada 0", async () => {
+    const org = await novoUsuario(PREFIXO);
+    const grupoId = await criarGrupo(PREFIXO, org);
+    await esperarNegado(criarSorteio(org, grupoId, id(), { rodada: 0 }));
     expect(await sorteiosDe(grupoId)).toEqual([]);
   });
 
