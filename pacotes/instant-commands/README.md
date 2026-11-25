@@ -374,9 +374,11 @@ then cached per key), so the worker must be able to reach the Instant API.
 `onEvent(event)` receives structured events (`webhook.ensured`, `webhook.received`,
 `webhook.rejected`, `sweep`, `subscribed`, `resubscribed`, `delivery`, `run.started`, `run.done`,
 `run.failed`, `command.failed`, `run.skipped`, `run.invalid_input`, `subscription.error`). Events
-never carry command fields other than the id. `run.failed` also reports failures to dispatch (a sweep query, the engine,
-fetching a webhook's payloads), with `error` and, when known, `command` and `commandId`; a failing
-entity does not stop the sweep of the others.
+never carry command fields other than the id. `run.failed` also reports failures to dispatch (a
+sweep query, the engine, fetching a webhook's payloads), with `error` and, when known, `command` and
+`commandId`; a failing entity does not stop the sweep of the others. `onEvent` is synchronous: an
+async reaction (a stream write, an alert) must catch its own errors, since an unhandled rejection is
+not swallowed.
 
 `command.failed` (`{ type, command, commandId, error }`) is the signal to react to a command that
 ended `failed` (close a screen, send an alert). `error` is the message stored on the command: the one
@@ -386,14 +388,16 @@ invalid input or the step limit. It is emitted after the path's own event (`run.
 contrast, is a diagnostic: it also fires on dispatch and sweep hiccups, may repeat, and carries the
 technical message.
 
+- It is also emitted when the handler marked its own command `failed` with `failCommand`, whether it
+  then returns or throws; `error` is then the stored message.
 - It is delivered once in normal operation. It can be lost if the process dies between the write of
-  `failed` and the emit, and in a rare replay of the final internal step (`ic:finish`, the case
-  where the handler marked itself `failed`) it can be repeated. Keep the reaction idempotent and, for
-  anything that must not be missed, also check the command's `status`.
-- It is not emitted when the command was deleted or was already `done`/`failed`, for siblings marked
-  with `failCommand`, or for dispatch and sweep hiccups (those only produce `run.failed`).
-- A handler that marks itself `failed` with `failCommand` and then throws does not emit it; return
-  instead, and the event carries the re-read `error`.
+  `failed` and the emit, and in a rare replay of a final internal step (e.g. when the handler marked
+  itself `failed`) it can be repeated. Keep the reaction idempotent and, for anything that must not
+  be missed, also check the command's `status`.
+- It is not emitted when the command was deleted or was already `done`/`failed` before the run
+  started, for siblings marked with `failCommand` before they started (a sibling that is already
+  running emits its own `command.failed` when its run ends), or for dispatch and sweep hiccups (those
+  only produce `run.failed`).
 
 `createRunner` checks (throws `CommandDefinitionError`; the same mistakes are compile errors) that
 each command has one handler, that names and entities are unique, and that no schedule is named like
