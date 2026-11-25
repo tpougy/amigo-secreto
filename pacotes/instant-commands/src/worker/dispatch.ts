@@ -4,10 +4,12 @@ import type { Command } from "../command";
 import type { Engine } from "./engine";
 import type { RunnerEvent } from "./execution";
 
+const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
 /**
  * One-off query of every `pending`/`running` command of each entity, dispatching each id to the
- * engine (which deduplicates by id). A failing dispatch is reported and does not stop the others.
- * Returns how many ids were dispatched successfully.
+ * engine (which deduplicates by id). A failing query or dispatch is reported and does not stop the
+ * others. Returns how many ids were dispatched successfully.
  */
 export async function sweep(
   db: InstantAdminDatabase<any, any>,
@@ -17,15 +19,21 @@ export async function sweep(
 ): Promise<number> {
   let count = 0;
   for (const command of commands) {
-    const result = (await db.query({
-      [command.entity]: { $: { where: { status: { $in: ["pending", "running"] } } } },
-    } as any)) as Record<string, { id: string }[]>;
+    let result: Record<string, { id: string }[]>;
+    try {
+      result = (await db.query({
+        [command.entity]: { $: { where: { status: { $in: ["pending", "running"] } } } },
+      } as any)) as Record<string, { id: string }[]>;
+    } catch (error) {
+      emit({ type: "run.failed", command: command.name, error: messageOf(error) });
+      continue;
+    }
     for (const { id } of result[command.entity] ?? []) {
       try {
         await engine.dispatch(command.name, id);
         count++;
       } catch (error) {
-        emit({ type: "run.failed", error: error instanceof Error ? error.message : String(error) });
+        emit({ type: "run.failed", command: command.name, commandId: id, error: messageOf(error) });
       }
     }
   }

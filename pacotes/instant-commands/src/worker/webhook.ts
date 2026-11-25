@@ -8,6 +8,8 @@ type Db = InstantAdminDatabase<any, any>;
 
 const text = (status: number, body: string) => new Response(body, { status });
 
+const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
 /**
  * Reads the body as UTF-8 text; `null` as soon as it passes `max` bytes. Headers are not trusted:
  * the limit holds for any `content-length`, a missing or malformed one included.
@@ -65,15 +67,25 @@ export function createWebhookHandler(options: {
       return text(401, "Invalid signature");
     }
 
+    let targets;
     try {
       const { data } = await db.webhooks.fetchPayloads(body);
-      const targets = data.filter((r) => r.action === "create" && byEntity.has(r.namespace));
-      for (const r of targets) await engine.dispatch(byEntity.get(r.namespace)!, r.id);
-      emit({ type: "webhook.received", count: targets.length });
-      return text(200, "ok");
-    } catch {
+      targets = data.filter((r) => r.action === "create" && byEntity.has(r.namespace));
+    } catch (error) {
+      emit({ type: "run.failed", error: messageOf(error) });
       return text(503, "Unavailable");
     }
+    for (const r of targets) {
+      const command = byEntity.get(r.namespace)!;
+      try {
+        await engine.dispatch(command, r.id);
+      } catch (error) {
+        emit({ type: "run.failed", command, commandId: r.id, error: messageOf(error) });
+        return text(503, "Unavailable");
+      }
+    }
+    emit({ type: "webhook.received", count: targets.length });
+    return text(200, "ok");
   };
 }
 

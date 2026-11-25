@@ -324,7 +324,9 @@ is used and the command is re-read from the database.
 `onEvent(event)` receives structured events (`webhook.ensured`, `webhook.received`,
 `webhook.rejected`, `sweep`, `subscribed`, `resubscribed`, `delivery`, `run.started`, `run.done`,
 `run.failed`, `run.skipped`, `run.invalid_input`, `subscription.error`). Events never carry command
-fields other than the id.
+fields other than the id. `run.failed` also reports failures to dispatch (a sweep query, the engine,
+fetching a webhook's payloads), with `error` and, when known, `command` and `commandId`; a failing
+entity does not stop the sweep of the others.
 
 `createRunner` checks (throws `CommandDefinitionError`; the same mistakes are compile errors) that
 each command has one handler, that names and entities are unique, and that no schedule is named like

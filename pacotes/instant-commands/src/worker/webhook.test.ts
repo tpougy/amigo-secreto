@@ -82,12 +82,14 @@ describe("webhook handler", () => {
   test("dispatch error → 503, never 410", async () => {
     const s = setup({ dispatchFails: true, records: [rec("sortear_cmds", "create")] });
     expect((await s.handler(post())).status).toBe(503);
+    expect(s.events).toEqual([{ type: "run.failed", command: "sortear", commandId: "c1", error: "boom" }]);
   });
 
   test("fetchPayloads failure → 503", async () => {
     const s = setup({ fetchFails: true });
     expect((await s.handler(post())).status).toBe(503);
     expect(s.dispatched).toEqual([]);
+    expect(s.events).toEqual([{ type: "run.failed", error: "fetch failed" }]);
   });
 
   test("body over maxBodyBytes → 413 before validation", async () => {

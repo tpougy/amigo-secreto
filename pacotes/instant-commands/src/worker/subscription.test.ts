@@ -232,7 +232,7 @@ describe("startSubscriptionTrigger", () => {
       ["c2", "y"],
     ]);
     const failure = events.find((e) => e.type === "run.failed");
-    expect(Object.keys(failure!).sort()).toEqual(["error", "type"]);
+    expect(failure).toEqual({ type: "run.failed", command: "c1", commandId: "bad", error: "detail" });
     t.stop();
   });
 

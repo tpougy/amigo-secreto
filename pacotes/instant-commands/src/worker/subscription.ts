@@ -156,7 +156,12 @@ export function startSubscriptionTrigger(
           try {
             await engine.dispatch(command.name, id);
           } catch (error) {
-            emit({ type: "run.failed", error: error instanceof Error ? error.message : String(error) });
+            emit({
+              type: "run.failed",
+              command: command.name,
+              commandId: id,
+              error: error instanceof Error ? error.message : String(error),
+            });
           }
         }
       },
