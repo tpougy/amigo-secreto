@@ -3,6 +3,7 @@
 import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { init as initCore } from "@instantdb/core";
 import { id, init, type InstantAdminDatabase, type InstantUnknownSchema } from "@instantdb/admin";
 import { OpenWorkflow } from "openworkflow";
 import { BackendSqlite } from "openworkflow/sqlite";
@@ -116,4 +117,52 @@ export async function limparRestos(): Promise<void> {
     const m = PREFIX_RE.exec(v);
     return m !== null && parseInt(m[1]!, 36) < limite;
   });
+}
+
+/**
+ * Runs `fn` with the browser SDK (`@instantdb/core`) signed in as `usuario`. Outside a browser the core only
+ * connects if it finds a `window`, so this fakes one, with in-memory storage and an always-online network;
+ * everything is undone at the end. Core `transact` returns "enqueued" here: wait with `esperarAte`.
+ */
+export async function clienteCoreIC<T>(
+  usuario: { email: string },
+  fn: (db: ReturnType<typeof initCore>) => Promise<T>,
+): Promise<T> {
+  const g = globalThis as Record<string, unknown>;
+  const tinhaWindow = "window" in g;
+  if (!tinhaWindow) g.window = globalThis;
+  class Memoria {
+    m = new Map<string, unknown>();
+    constructor(_appId: string, _dbName: string) {}
+    async getItem(k: string) {
+      return this.m.get(k) ?? null;
+    }
+    async setItem(k: string, v: unknown) {
+      this.m.set(k, v);
+    }
+    async getAllKeys() {
+      return [...this.m.keys()];
+    }
+    async multiSet(kv: [string, unknown][]) {
+      for (const [k, v] of kv) this.m.set(k, v);
+    }
+    async removeItem(k: string) {
+      this.m.delete(k);
+    }
+  }
+  const SempreOnline = { getIsOnline: async () => true, listen: () => () => {} };
+  const { appId, apiURI } = config();
+  const db = initCore(
+    { appId, apiURI, websocketURI: `${apiURI.replace(/^http/, "ws")}/runtime/session`, schema },
+    Memoria as any,
+    SempreOnline as any,
+  );
+  try {
+    const token = await adminIC().auth.createToken({ email: usuario.email });
+    await db.auth.signInWithToken(token);
+    return await fn(db);
+  } finally {
+    db.shutdown();
+    if (!tinhaWindow) delete g.window;
+  }
 }

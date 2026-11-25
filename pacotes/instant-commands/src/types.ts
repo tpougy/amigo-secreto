@@ -1,6 +1,7 @@
 import type { DataAttrDef } from "@instantdb/core";
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { Command } from "./command";
+import type { CommandStatus } from "./fields";
 
 type Prettify<T> = { [K in keyof T]: T[K] } & {};
 
@@ -40,3 +41,19 @@ export type ResultOf<C extends Command> = OutputOfSpec<ResultSpecOf<C>, "output"
 
 /** What `complete` accepts: `T` of `i.json<T>()`, the Standard Schema input, or `null` without `result`. */
 export type ResultInputOf<C extends Command> = OutputOfSpec<ResultSpecOf<C>, "input">;
+
+/** Id of a command of type `C`; branded so it cannot be used with another command. */
+export type CommandId<C extends Command> = string & { readonly __command: C["name"] };
+
+/** What a client sees of a command; `null` means the command no longer exists (or is not visible). */
+export type CommandState<C extends Command> = {
+  id: CommandId<C>;
+  status: CommandStatus;
+  error: string | null;
+  /** The validated result; `null` while there is none, or when the stored value failed validation (see `resultIssues`). */
+  result: ResultOf<C> | null;
+  resultIssues: readonly { message: string }[] | null;
+  attempts: number;
+  createdAt: number;
+  finishedAt: number | null;
+} | null;
