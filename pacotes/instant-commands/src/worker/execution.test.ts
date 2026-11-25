@@ -7,8 +7,13 @@ import { defineHandler } from "./handler";
 const open = { id: "c1", status: "running", chave: "k", rodada: 1 };
 const stepLimit = () => Object.assign(new Error("step limit exceeded"), { name: "StepLimitExceededError" });
 
-function setup(transact: (chunks: unknown[]) => Promise<unknown>, withHook: boolean, status = "running") {
-  const db = { query: async () => ({ sorteios: [{ ...open, status }] }), transact: mock(transact) } as any;
+function setup(
+  transact: (chunks: unknown[]) => Promise<unknown>,
+  withHook: boolean,
+  status = "running",
+  stored: Record<string, unknown> = {},
+) {
+  const db = { query: async () => ({ sorteios: [{ ...open, ...stored, status }] }), transact: mock(transact) } as any;
   let workflow: ((ctx: any) => Promise<unknown>) | undefined;
   const engine = { define: (_n: string, _v: unknown, fn: any) => (workflow = fn) } as any;
   const events: RunnerEvent[] = [];
@@ -75,8 +80,16 @@ describe("step limit", () => {
     expect(failedEvents(events)).toHaveLength(0);
   });
 
-  test("already failed → no command.failed", async () => {
-    const { db, events, run, error } = setup(async () => ({}), true, "failed");
+  test("already failed → one command.failed with the stored error, nothing written", async () => {
+    const { db, events, run, error, hook } = setup(async () => ({}), true, "failed", { error: "own" });
+    await expect(run()).rejects.toBe(error);
+    expect(db.transact).not.toHaveBeenCalled();
+    expect(hook).not.toHaveBeenCalled();
+    expect(failedEvents(events)).toEqual([{ type: "command.failed", command: "sortear", commandId: "c1", error: "own" }]);
+  });
+
+  test("already done → no command.failed", async () => {
+    const { db, events, run, error } = setup(async () => ({}), true, "done");
     await expect(run()).rejects.toBe(error);
     expect(db.transact).not.toHaveBeenCalled();
     expect(failedEvents(events)).toHaveLength(0);

@@ -7,7 +7,7 @@ import { validateResult } from "../result";
 
 type Db = InstantAdminDatabase<any, any>;
 
-type Row = { status: string; attempts?: number | null };
+type Row = { status: string; attempts?: number | null; error?: string | null };
 
 async function find(db: Db, command: Command, id: string): Promise<Row | undefined> {
   const res = (await db.query({ [command.entity]: { $: { where: { id } } } } as any)) as unknown as Record<string, Row[]>;
@@ -56,7 +56,11 @@ export async function markRunning(
 }
 
 export type FailureExtras = (record: Record<string, any>) => Promise<TransactionChunk<any, any>[]>;
-export type MarkFailedResult = { written: boolean; extrasError?: string };
+/**
+ * `written`: this call wrote `failed`. `alreadyFailed`: set (with the stored `error`) when nothing was
+ * written because the command was already `failed`; absent when it no longer exists or is `done`.
+ */
+export type MarkFailedResult = { written: boolean; extrasError?: string; alreadyFailed?: { error: string | null } };
 
 const errorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -69,7 +73,7 @@ export function isInstantRejection(error: unknown): boolean {
 
 /**
  * Marks the command `failed`; `written: false` (and no write, `extras` not called) if it no longer
- * exists or is already `done`/`failed`. `extras` may add chunks written in the SAME transaction; if it
+ * exists or is already `done`/`failed` (then `alreadyFailed` carries the stored `error`). `extras` may add chunks written in the SAME transaction; if it
  * throws, or Instant rejects the transaction with them, `failed` is written alone and `extrasError` says why.
  */
 export async function markFailed(
@@ -80,6 +84,7 @@ export async function markFailed(
   extras?: FailureExtras,
 ): Promise<MarkFailedResult> {
   const row = await find(db, command, id);
+  if (row?.status === "failed") return { written: false, alreadyFailed: { error: row.error ?? null } };
   if (!isOpen(row)) return { written: false };
   const failed = failedChunk(command, id, message);
   let chunks: TransactionChunk<any, any>[] = [];

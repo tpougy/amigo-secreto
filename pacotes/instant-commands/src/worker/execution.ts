@@ -100,12 +100,24 @@ export function registerHandler(
   }
 
   /**
-   * After the path's own event: `command.failed` (only if this call wrote `failed`, with the stored
-   * message), then the extra `run.failed` when the hook's chunks could not be written.
+   * After the path's own event: `command.failed`, then the extra `run.failed` when the hook's chunks
+   * could not be written. See `emitCommandFailed`.
    */
   function reportFailed(result: MarkFailedResult, commandId: string, message: string): void {
-    if (result.written) emit({ type: "command.failed", ...base, commandId, error: message });
+    emitCommandFailed(result, commandId, message);
     if (result.extrasError !== undefined) emit({ type: "run.failed", ...base, commandId, error: result.extrasError });
+  }
+
+  /**
+   * `command.failed` when this call wrote `failed` (with `message`) or found the command already
+   * `failed` (with its stored error): `ic:check` saw it open when the run started, so it ended failed
+   * during this run (e.g. the handler's own `failCommand`). Nothing when absent or `done`.
+   */
+  function emitCommandFailed(result: MarkFailedResult, commandId: string, message: string): void {
+    if (result.written) emit({ type: "command.failed", ...base, commandId, error: message });
+    else if (result.alreadyFailed) {
+      emit({ type: "command.failed", ...base, commandId, error: result.alreadyFailed.error ?? defaultErrorMessage });
+    }
   }
 
   engine.define(command.name, version, async ({ input: { commandId }, step: engineStep }) => {
@@ -128,7 +140,7 @@ export function registerHandler(
           emit({ type: "run.failed", ...ev, error: messageOf(writeError) });
           try {
             const fallback = await markFailed(db, command, commandId, defaultErrorMessage);
-            if (fallback.written) emit({ type: "command.failed", ...ev, error: defaultErrorMessage });
+            emitCommandFailed(fallback, commandId, defaultErrorMessage);
             emit({ type: "run.failed", ...ev, error: messageOf(e) });
           } catch (fallbackError) {
             emit({ type: "run.failed", ...ev, error: messageOf(fallbackError) });

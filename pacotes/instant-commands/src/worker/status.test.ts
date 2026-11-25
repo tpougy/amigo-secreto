@@ -26,19 +26,30 @@ describe("markFailed with extras", () => {
     expect(arg[1]).toBe(extra);
   });
 
-  for (const [nome, rows] of [
-    ["absent", []],
-    ["done", [{ ...open, status: "done" }]],
-    ["failed", [{ ...open, status: "failed" }]],
+  for (const [nome, rows, expected] of [
+    ["absent", [], { written: false }],
+    ["done", [{ ...open, status: "done" }], { written: false }],
+    ["failed", [{ ...open, status: "failed" }], { written: false, alreadyFailed: { error: null } }],
   ] as const) {
     test(`does not call extras when the command is ${nome}`, async () => {
       const { db, transact } = fakeDb([...rows]);
       const extras = mock(async () => []);
-      expect(await markFailed(db, sortear, "c1", "m", extras)).toEqual({ written: false });
+      expect(await markFailed(db, sortear, "c1", "m", extras)).toEqual(expected);
       expect(extras).not.toHaveBeenCalled();
       expect(transact).not.toHaveBeenCalled();
     });
   }
+
+  test("already failed → written false, alreadyFailed with the stored error; done → no alreadyFailed", async () => {
+    const failed = fakeDb([{ ...open, status: "failed", error: "own" }]);
+    expect(await markFailed(failed.db, sortear, "c1", "m")).toEqual({ written: false, alreadyFailed: { error: "own" } });
+    expect(failed.transact).not.toHaveBeenCalled();
+    const done = fakeDb([{ ...open, status: "done", error: null }]);
+    const res = await markFailed(done.db, sortear, "c1", "m");
+    expect(res).toEqual({ written: false });
+    expect(res.alreadyFailed).toBeUndefined();
+    expect(done.transact).not.toHaveBeenCalled();
+  });
 
   test("extras that throws → failed written alone, extrasError 'onFailure: boom'", async () => {
     const { db, transact } = fakeDb([open]);

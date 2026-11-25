@@ -536,7 +536,7 @@ describe("command.failed", () => {
     expect(f[0]!.error).toBe("own");
   });
 
-  test("handler fails itself with failCommand and then throws → no command.failed", async () => {
+  test("handler fails itself with failCommand and then throws → one command.failed with the stored error", async () => {
     const h = defineHandler(sortear, async ({ db, command }) => {
       await db.transact(failCommand(sortear, command.id, "own"));
       throw new Error("after failCommand");
@@ -544,9 +544,11 @@ describe("command.failed", () => {
     const { engine, events } = await rodar("cf-proprio-lanca", h);
     const { cid } = await novoCommand();
     await engine.dispatch("sortear", cid);
-    await esperarEvento(events, cid, "run.failed");
+    await esperarEvento(events, cid, "command.failed");
     await new Promise((res) => setTimeout(res, 300));
-    expect(failedEvents(events, cid)).toHaveLength(0);
+    const f = failedEvents(events, cid);
+    expect(f).toHaveLength(1);
+    expect(f[0]!.error).toBe("own");
   });
 
   test("onFailure that throws → one command.failed, after the run.failed and before the 'onFailure: ' run.failed", async () => {
