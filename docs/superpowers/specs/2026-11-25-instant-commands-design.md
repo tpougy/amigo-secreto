@@ -1,6 +1,6 @@
 # `instant-commands`: API de commands duráveis sobre o Instant (design)
 
-**Data:** 2026-11-25 · **Status:** API aprovada (Thomaz); implementação sem compromisso de data. Origem: [`docs/ideias/instant-openworkflow.md`](../../ideias/instant-openworkflow.md), que traz a motivação e a pesquisa de projetos parecidos.
+**Data:** 2026-11-25 · **Status:** implementado em `pacotes/instant-commands` (ver "Status da implementação e desvios", no fim); API aprovada (Thomaz). Origem: [`docs/ideias/instant-openworkflow.md`](../../ideias/instant-openworkflow.md), que traz a motivação e a pesquisa de projetos parecidos.
 
 ## Intenção
 
@@ -550,3 +550,23 @@ O amigo-secreto usa status e campos em português (`pendente`, `erro`, `criadoEm
 - Os testes, incluindo um de integração contra um Instant local (instantdb-rust), como os testes atuais do worker.
 - O formato exato dos eventos do `onEvent`, além dos tipos listados.
 - O tratamento das diferenças de resposta entre versões do Instant (link vazio `null` ou ausente).
+
+## Status da implementação e desvios
+
+Implementado como workspace `pacotes/instant-commands`, sem publicar. README em inglês no pacote; texto proposto para a VPS em `docs/propostas/plataforma-workflows-webhook.md`; resultados do hairpin e do e2e em `docs/spikes/hairpin-webhook.md`. O modo webhook foi validado na VPS (3 de 3 no e2e).
+
+**Desvios em relação ao texto acima**
+
+- **Alias `Ctx` no app:** `type Ctx<C> = HandlerContext<C, AppSchema>`. Um handler declarado como função separada precisa dele; `HandlerContext<C>` sem o schema tem um `db` de schema desconhecido.
+- **Erros de controle do OpenWorkflow (Tasks 10 e 12):** são relançados, e só a falha final de um step encerra o command como `failed`.
+- **`fail()` dentro de um step nunca é repetido:** o step termina com um marcador e o erro é relançado fora dele (nem retries, nem nova execução numa retomada).
+- **`sendCommand` continua com `update`:** o Task 1 mostrou que um `update` num id novo chega ao webhook como `create`, então não foi preciso trocar por `.create`.
+- **Command terminal nunca é sobrescrito:** `done` e `failed` não são reescritos pela biblioteca (nem por uma falha tardia do run).
+- **`initCommands` também devolve um `defineSchedule` amarrado** ao schema, com checagem de nome em tempo de compilação.
+- **`Runner.port`:** a porta do servidor embutido depois de `start()` (útil com `port: 0`).
+
+**Limitações conhecidas**
+
+- Espalhar `commandEntities`/`commandLinks` no `i.schema` sobrescreve em silêncio uma entidade ou um link do app com o mesmo nome. A garantia vem de `mergePerms`, que acusa a entidade duplicada quando ela tem regras, e da documentação. Link repetido, ou entidade sem regras, não é detectado.
+- TypeScript 6.0.x com `@instantdb/core` 1.0.67 tipa os valores de atributos nos resultados de consulta como `any` (nomes e chaves das entidades continuam tipados). Com TypeScript 5.9, ficam totalmente tipados.
+- Os demais limites (sem compare-and-set, `fail` não desestruturável, `result` com schema síncrono, `onEvent` sensível, `runner.start()` com falha não repetível na mesma instância) estão na seção "Known limitations and notes" do README.

@@ -1,6 +1,6 @@
 # Ideia: `instant-openworkflow`, uma biblioteca de pedidos duráveis para o Instant
 
-**Data:** 2026-11-25 · **Status:** só ideia, sem compromisso de implementar. O amigo-secreto e o Pluto continuam com o arranjo atual (campainha + OpenWorkflow).
+**Data:** 2026-11-25 · **Status:** virou o pacote `instant-commands` (design em [`docs/superpowers/specs/2026-11-25-instant-commands-design.md`](../superpowers/specs/2026-11-25-instant-commands-design.md), código e README em [`pacotes/instant-commands`](../../pacotes/instant-commands)). O texto abaixo é o registro da ideia original. O amigo-secreto e o Pluto continuam com o arranjo atual (campainha + OpenWorkflow).
 
 ## Por que existe a lacuna
 
