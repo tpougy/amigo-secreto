@@ -54,9 +54,11 @@ O `run.failed` mistura dois significados: diagnóstico técnico (soluço de disp
 - **Tipo:** `"command.failed"`, acrescentado a `RunnerEvent["type"]`. Chaves: só as que já existem (`type`, `command`, `commandId`, `error`). `error` é a **mensagem gravada** no pedido (a que a tela mostra), nunca a exceção técnica.
 - **Quando:** logo depois de a biblioteca gravar `failed` de fato (`markFailed` devolveu `written: true`), em todos os caminhos (`fail`, `error`, `invalid_result`, `invalid_input`, `step_limit`, inclusive quando o `onFailure` lançou ou foi recusado); e no `ic:finish` quando o registro relido já está `failed` (o handler gravou a própria falha com `failCommand`).
 - **Quando não:** soluço de disparo, erro de varredura, pedido apagado, pedido já terminado antes, irmãs marcadas pelo handler com `failCommand`.
-- **Garantia:** no máximo uma vez por pedido. Num replay, `markFailed` não grava e não emite; se o processo cair entre a gravação e a emissão, o evento se perde (a tela usa o `status`, e o reprocessamento diário cobre a exclusão).
+- **Garantia:** uma vez em operação normal. Num replay, `markFailed` não grava e não emite; se o processo cair entre a gravação e a emissão, o evento se perde (a tela usa o `status`, e o reprocessamento diário cobre a exclusão). No replay raro do `ic:finish` (caso do handler que gravou a própria falha) ele pode se repetir; as reações do worker (`escreverFase`, log) são idempotentes.
 - `run.failed` continua como está.
 - README: documentar `command.failed` como o sinal para reagir à falha de um pedido e `run.failed` como diagnóstico.
+
+**Status:** implementado (commit 6c633bf; documentação no commit seguinte). Desvios: (1) o handler que se marca `failed` com `failCommand` e **depois lança** não emite o evento; o README recomenda retornar. (2) A garantia é "uma vez em operação normal", não "no máximo uma vez": pode repetir no replay raro do `ic:finish`. (3) O evento sai depois do `run.failed`/`run.invalid_input` do próprio caminho e antes do `run.failed` extra do `onFailure`.
 
 ## Desenho
 

@@ -128,6 +128,10 @@ const stats = defineSchedule({ name: "count-groups", cron: "0 * * * *", run: cou
 
 function logEvent(event: icWorker.RunnerEvent) {
   console.log(JSON.stringify(event));
+  if (event.type === "command.failed" && event.command === "draw") {
+    // The command ended `failed`; `event.error` is the message stored on it.
+    // React here: close a screen, send an alert.
+  }
 }
 
 const runner = createRunner({

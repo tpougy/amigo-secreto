@@ -224,6 +224,10 @@ const stats = defineSchedule({ name: "count-groups", cron: "0 * * * *", run: cou
 
 function logEvent(event: ic.RunnerEvent) {
   console.log(JSON.stringify(event));
+  if (event.type === "command.failed" && event.command === "draw") {
+    // The command ended `failed`; `event.error` is the message stored on it.
+    // React here: close a screen, send an alert.
+  }
 }
 
 const runner = createRunner({
@@ -264,7 +268,7 @@ process.on("SIGTERM", () => void runner.stop().then(() => process.exit(0)));
     are `unknown` and only the ones present are included (fields stored as `null` are omitted too).
     It returns transaction chunks (or a promise of them).
   - It must never call `db.transact`, and it may run more than once (replay), so do not put side
-    effects in it; use `onEvent` (`run.failed`) for those. Keep the extras simple (writes to the
+    effects in it; use `onEvent` (`command.failed`) for those. Keep the extras simple (writes to the
     command's own record): extras that deterministically make Instant fail with a non-4xx error
     are retried with the internal step and can re-run the handler.
   - Fallbacks keep a broken hook from leaving the command `running`. If the hook throws, returns a
@@ -276,7 +280,8 @@ process.on("SIGTERM", () => void runner.stop().then(() => process.exit(0)));
     propagate and the internal step is retried; on the step-limit path, which runs outside any
     step, `failed` is written alone instead.
   - Because of these fallbacks, `onEvent` may receive an additional `run.failed` whose `error`
-    starts with `onFailure`; consumers that act once per failure should filter on that prefix.
+    starts with `onFailure`. To act once per failed command, use `command.failed` (see below)
+    instead of filtering `run.failed` on that prefix.
   - It does not run when the command no longer exists or is already `done` or `failed` (including
     when the handler marked it `failed` with `failCommand` in its own transaction).
 
@@ -368,10 +373,27 @@ then cached per key), so the worker must be able to reach the Instant API.
 
 `onEvent(event)` receives structured events (`webhook.ensured`, `webhook.received`,
 `webhook.rejected`, `sweep`, `subscribed`, `resubscribed`, `delivery`, `run.started`, `run.done`,
-`run.failed`, `run.skipped`, `run.invalid_input`, `subscription.error`). Events never carry command
-fields other than the id. `run.failed` also reports failures to dispatch (a sweep query, the engine,
+`run.failed`, `command.failed`, `run.skipped`, `run.invalid_input`, `subscription.error`). Events
+never carry command fields other than the id. `run.failed` also reports failures to dispatch (a sweep query, the engine,
 fetching a webhook's payloads), with `error` and, when known, `command` and `commandId`; a failing
 entity does not stop the sweep of the others.
+
+`command.failed` (`{ type, command, commandId, error }`) is the signal to react to a command that
+ended `failed` (close a screen, send an alert). `error` is the message stored on the command: the one
+passed to `ic.fail`, or `defaultErrorMessage` for an unexpected exception, an invalid result, an
+invalid input or the step limit. It is emitted after the path's own event (`run.failed` or
+`run.invalid_input`) and before the extra `run.failed` from an `onFailure` error. `run.failed`, in
+contrast, is a diagnostic: it also fires on dispatch and sweep hiccups, may repeat, and carries the
+technical message.
+
+- It is delivered once in normal operation. It can be lost if the process dies between the write of
+  `failed` and the emit, and in a rare replay of the final internal step (`ic:finish`, the case
+  where the handler marked itself `failed`) it can be repeated. Keep the reaction idempotent and, for
+  anything that must not be missed, also check the command's `status`.
+- It is not emitted when the command was deleted or was already `done`/`failed`, for siblings marked
+  with `failCommand`, or for dispatch and sweep hiccups (those only produce `run.failed`).
+- A handler that marks itself `failed` with `failCommand` and then throws does not emit it; return
+  instead, and the event carries the re-read `error`.
 
 `createRunner` checks (throws `CommandDefinitionError`; the same mistakes are compile errors) that
 each command has one handler, that names and entities are unique, and that no schedule is named like

@@ -400,7 +400,7 @@ O que `runner.start()` faz:
    - O tempo de resposta fica bem abaixo dos 20 s do Instant, porque a rota só enfileira.
    - O conteúdo do aviso é tratado como campainha: só o id é usado, e o command é relido no banco pela checagem do passo 4.
 6. **Na assinatura** (modo `subscription`), em erro, reassina com backoff (1, 2, 5, 10 e 30 s), que zera na primeira entrega bem-sucedida. A cada `resubscribeEveryMs`, reassina tudo, para cobrir conexões meio abertas que nunca dão erro.
-7. Emite eventos estruturados pelo `onEvent`: `webhook.ensured`, `webhook.received`, `webhook.rejected`, `sweep`, `subscribed`, `resubscribed`, `delivery`, `run.started`, `run.done`, `run.failed`, `run.skipped`, `run.invalid_input`, `subscription.error`. Os eventos nunca carregam campos do command além do id.
+7. Emite eventos estruturados pelo `onEvent`: `webhook.ensured`, `webhook.received`, `webhook.rejected`, `sweep`, `subscribed`, `resubscribed`, `delivery`, `run.started`, `run.done`, `run.failed`, `command.failed`, `run.skipped`, `run.invalid_input`, `subscription.error`. Os eventos nunca carregam campos do command além do id. `command.failed` (`type`, `command`, `commandId`, `error`) é o sinal de que um command terminou `failed`, com `error` = a mensagem gravada; `run.failed` segue como diagnóstico.
 
 `runner.stop()` para de aceitar POSTs (ou fecha as assinaturas), cancela a varredura periódica e para o worker do OpenWorkflow, esperando os runs em andamento.
 
@@ -568,6 +568,7 @@ Implementado como workspace `pacotes/instant-commands`, sem publicar. README em 
 - **`sendCommand` continua com `update`:** o Task 1 mostrou que um `update` num id novo chega ao webhook como `create`, então não foi preciso trocar por `.create`.
 - **Command terminal nunca é sobrescrito:** `done` e `failed` não são reescritos pela biblioteca (nem por uma falha tardia do run).
 - **`initCommands` também devolve um `defineSchedule` amarrado** ao schema, com checagem de nome em tempo de compilação.
+- **Evento `command.failed`:** acrescentado depois da primeira implementação (commit 6c633bf). Sai quando a biblioteca termina o command como `failed` (`fail`, exceção, resultado ou entrada inválidos, limite de steps, e o `ic:finish` quando o handler marcou a própria falha com `failCommand`), depois do evento do próprio caminho e antes do `run.failed` extra do `onFailure`. Não sai em soluço de disparo ou de varredura, command apagado ou já terminado, irmãs marcadas com `failCommand`, nem quando o handler se marca `failed` e depois lança. Entrega: uma vez em operação normal; pode se perder se o processo cair entre a gravação e a emissão, e pode repetir no replay raro do `ic:finish`. `run.failed` não mudou.
 - **`Runner.port`:** a porta do servidor embutido depois de `start()` (útil com `port: 0`).
 
 **Limitações conhecidas**
