@@ -164,6 +164,7 @@ export type Ctx<C extends ic.Command> = ic.HandlerContext<C, AppSchema>;
 import * as ic from "instant-commands/worker";
 import { draw } from "../../commands/draw";
 import { defineHandler, type Ctx } from "../commands";
+import type { AppSchema } from "../../instant.schema";
 
 async function loadGroup(db: Ctx<typeof draw>["db"], drawId: string) {
   const { draws } = await db.query({ draws: { $: { where: { id: drawId } }, group: {} } });
@@ -184,7 +185,14 @@ async function runDraw({ db, command, step }: Ctx<typeof draw>) {
   await step.run("apply", applyDraw, db, command, group.id);
 }
 
-export const drawHandler = defineHandler(draw, runDraw, { version: "1" });
+// Runs in the same transaction that marks the command `failed`, on every failure path.
+async function reopenGroup({ db, command }: ic.FailureContext<typeof draw, AppSchema>) {
+  const { draws } = await db.query({ draws: { $: { where: { id: command.id } }, group: {} } });
+  const group = draws[0]?.group;
+  return group ? [db.tx.groups[group.id].update({ status: "open" })] : [];
+}
+
+export const drawHandler = defineHandler(draw, runDraw, { version: "1", onFailure: reopenGroup });
 ```
 
 ```ts
@@ -232,7 +240,8 @@ process.on("SIGTERM", () => void runner.stop().then(() => process.exit(0)));
 - `ic.fail(message)` ends it as `failed`, with `message` in `error`, and is never retried (also when
   called inside a step). Only messages you pass to `fail` or `failCommand` reach the database.
 - `ic.failCommand(command, id, message)` returns a transaction chunk that marks *another* command
-  `failed` (e.g. pending siblings), for use in your own `db.transact`.
+  `failed` (e.g. pending siblings), for use in your own `db.transact`. Use `ic.fail` for the
+  command's own failure and `failCommand` only for *other* commands.
 - An unexpected exception, once the step's retries are exhausted, ends it as `failed` with the
   generic `defaultErrorMessage` (default `"Could not complete the command"`, configurable in
   `defineHandler` options). The exception's own message goes only to `onEvent`.
@@ -243,8 +252,25 @@ process.on("SIGTERM", () => void runner.stop().then(() => process.exit(0)));
 - An exception thrown outside any step (directly in the handler's body) fails the command
   immediately, without retry: only steps are retried.
 - Step names starting with `ic:` are reserved for the library's internal steps.
+- `onFailure` (a `defineHandler` option) adds your writes to the same transaction in which the
+  library writes `failed`, on every failure path: `ic.fail`, an unexpected exception, an invalid
+  result, an invalid input and the step limit. It receives `{ db, command, reason, error }`, where
+  `reason` is `"fail" | "error" | "invalid_result" | "invalid_input" | "step_limit"`. `command` is
+  re-read at failure time and holds only the command's own fields and `id`; for `"invalid_input"`
+  its fields are `unknown` and only the ones present are included (fields stored as `null` are
+  omitted too). It returns transaction chunks (or a promise of them) and must never call
+  `db.transact`. It may run more than once (replay), so do not put side effects in it; use
+  `onEvent` (`run.failed`) for those. Two fallbacks keep a broken hook from leaving the command
+  `running`: if the hook throws, returns a non-array or returns an element that is not a
+  transaction chunk, `failed` is written alone and an extra `run.failed` event has an `error`
+  starting with `"onFailure: "` (`"onFailure: must return transaction chunks"` for the non-chunk
+  case); if Instant rejects the transaction (an `InstantAPIError` 4xx, except 408 and 429),
+  `failed` is written alone and an extra `run.failed` event has
+  `error: "onFailure rejected: <message>"`. Other transaction errors propagate and the internal step
+  is retried. The hook does not run when the command is `done`, was deleted or already finished,
+  or when the handler itself wrote `failed` with `failCommand` inside its own transaction.
 
-`defineHandler(command, fn, { version, retryPolicy, defaultErrorMessage })`: `version` is the
+`defineHandler(command, fn, { version, retryPolicy, defaultErrorMessage, onFailure })`: `version` is the
 OpenWorkflow workflow version; change it when steps change incompatibly.
 
 `step.run(name, fn, ...args)` runs `fn(...args)` as a durable step (also

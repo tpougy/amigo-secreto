@@ -325,6 +325,7 @@ export const reabrirGrupoHandler = defineHandler(reabrirGrupo, executarReabertur
 **Como o command termina**
 - **`fail(mensagem)`** lança um erro especial. A biblioteca grava `status: "failed"`, `error: mensagem` e `finishedAt`, sem tentar de novo.
 - **`failCommand(command, id, mensagem)`** devolve um pedaço de transação que marca *outro* command como `failed`. Serve para os irmãos pendentes, como no exemplo.
+- **`onFailure`** (opção de `defineHandler`) acrescenta escritas à transação que grava `failed`, em todos os caminhos de falha. Ver [`2026-11-25-instant-commands-onfailure-design.md`](2026-11-25-instant-commands-onfailure-design.md). Para a falha do próprio command, prefira `fail`; `failCommand` só para *outros* commands.
 - **Exceção inesperada** (depois de esgotados os retries do step): `status: "failed"` com `defaultErrorMessage`. A mensagem e a pilha da exceção vão só para o `onEvent`, nunca para o banco.
 - **O handler retornou sem chamar `command.complete`**: a biblioteca grava `done` sozinha, com o valor retornado como `result`, validado como em `complete`. O tipo do retorno do handler é conferido contra `ResultOf<cmd>`.
 - **Resultado inválido** (`CommandResultError`): segue o caminho da exceção inesperada.

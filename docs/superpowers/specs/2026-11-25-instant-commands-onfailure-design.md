@@ -1,6 +1,6 @@
 # `instant-commands`: gancho `onFailure` (design)
 
-**Data:** 2026-11-25 · **Status:** proposta, aguardando aprovação. Origem: avaliação da migração do amigo-secreto ([`docs/ideias/migracao-instant-commands.md`](../../ideias/migracao-instant-commands.md)). Complementa a especificação principal ([`2026-11-25-instant-commands-design.md`](2026-11-25-instant-commands-design.md)), seção "Como o command termina".
+**Data:** 2026-11-25 · **Status:** implementado. Origem: avaliação da migração do amigo-secreto ([`docs/ideias/migracao-instant-commands.md`](../../ideias/migracao-instant-commands.md)). Complementa a especificação principal ([`2026-11-25-instant-commands-design.md`](2026-11-25-instant-commands-design.md)), seção "Como o command termina".
 
 ## Intenção
 
@@ -174,3 +174,13 @@ A reabertura e a exclusão de conta não reservam nada e não usam o gancho.
 
 - **`invalid_input` deve chamar o gancho?** A proposta diz que sim, com campos `unknown`, porque um command inválido também pode estar segurando uma reserva. A alternativa é não chamar, e o gancho fica com tipos mais simples.
 - **Fallback na recusa 4xx.** A proposta grava `failed` sem os extras, para o command não ficar `running`. O custo é a reserva continuar presa nesse caso raro, avisado só pelo `onEvent`.
+
+## Status da implementação e desvios
+
+Implementado em `pacotes/instant-commands` (`src/worker/handler.ts`, `status.ts`, `execution.ts`). Desvios em relação à proposta:
+
+1. **Testes de `execution` são de integração**, seguindo o padrão do pacote, e não de unidade.
+2. **`isInstantRejection` não precisou mudar.** O servidor confirmou que o conflito de unicidade chega como `InstantAPIError` 400, com `body.type` `record-not-unique`.
+3. **Regra acrescentada** (não estava na proposta): um elemento do array sem `__ops` é tratado como erro do gancho, com `error: "onFailure: must return transaction chunks"`.
+4. **Campos gravados como `null`** são omitidos de `ctx.command`, como os ausentes.
+5. **Novo script `test:one`** no `package.json` do pacote, para rodar um arquivo de teste isolado.

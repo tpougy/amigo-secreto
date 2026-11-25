@@ -99,7 +99,14 @@ async function runDraw({ db, command, step }: Ctx<typeof draw>) {
   await step.run("apply", applyDraw, db, command, group.id);
 }
 
-export const drawHandler = defineHandler(draw, runDraw, { version: "1" });
+// Runs in the same transaction that marks the command `failed`, on every failure path.
+async function reopenGroup({ db, command }: icWorker.FailureContext<typeof draw, AppSchema>) {
+  const { draws } = await db.query({ draws: { $: { where: { id: command.id } }, group: {} } });
+  const group = draws[0]?.group;
+  return group ? [db.tx.groups[group.id].update({ status: "open" })] : [];
+}
+
+export const drawHandler = defineHandler(draw, runDraw, { version: "1", onFailure: reopenGroup });
 
 // ---- worker/main.ts --------------------------------------------------------------------------
 const db = initAdmin({
