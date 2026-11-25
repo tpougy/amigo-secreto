@@ -1,3 +1,4 @@
+import { CommandFailure } from "./failure";
 import type { Jsonify } from "../types";
 import type { EngineStep, RetryPolicy } from "./engine";
 
@@ -21,14 +22,7 @@ function isFailMarker(value: unknown): value is FailMarker {
 }
 
 function isCommandFailure(error: unknown): error is Error {
-  return error instanceof Error && error.name === "CommandFailure";
-}
-
-// TODO(Task 11): throw the real `CommandFailure` class.
-function commandFailure(message: string): Error {
-  const e = new Error(message);
-  e.name = "CommandFailure";
-  return e;
+  return error instanceof CommandFailure || (error instanceof Error && error.name === "CommandFailure");
 }
 
 /**
@@ -52,7 +46,7 @@ export function createStep(engineStep: EngineStep, defaultPolicy?: RetryPolicy):
           }
         },
       );
-      if (isFailMarker(out)) throw commandFailure(out.__icFail);
+      if (isFailMarker(out)) throw new CommandFailure(out.__icFail);
       return out;
     },
   };

@@ -42,6 +42,13 @@ export type ResultOf<C extends Command> = OutputOfSpec<ResultSpecOf<C>, "output"
 /** What `complete` accepts: `T` of `i.json<T>()`, the Standard Schema input, or `null` without `result`. */
 export type ResultInputOf<C extends Command> = OutputOfSpec<ResultSpecOf<C>, "input">;
 
+/** Values of a command's own fields as stored: required ones as is, optional ones as optional keys. */
+export type FieldValues<C extends Command> = Prettify<
+  { [K in RequiredKeys<FieldsOf<C>>]: ValueOf<FieldsOf<C>[K]> } & {
+    [K in OptionalKeys<FieldsOf<C>>]?: ValueOf<FieldsOf<C>[K]> | undefined;
+  }
+>;
+
 /** Id of a command of type `C`; branded so it cannot be used with another command. */
 export type CommandId<C extends Command> = string & { readonly __command: C["name"] };
 
@@ -64,18 +71,25 @@ export type CommandState<C extends Command> = {
  */
 export type Jsonify<T> = 0 extends 1 & T
   ? any
+  : [T] extends [void | undefined]
+    ? null
+    : JsonifyValue<T>;
+
+// Nested `void`/`undefined` properties are omitted by JSON.stringify; only the top level becomes `null`.
+type JsonifyValue<T> = 0 extends 1 & T
+  ? any
   : unknown extends T
     ? unknown
     : T extends Date
       ? string
       : T extends string | number | boolean | null
         ? T
-        : T extends undefined | symbol | ((...args: any[]) => any)
+        : T extends void | undefined | symbol | ((...args: any[]) => any)
           ? never
           : T extends { toJSON(): infer J }
-            ? Jsonify<J>
+            ? JsonifyValue<J>
             : T extends readonly unknown[]
-              ? { -readonly [K in keyof T]: Jsonify<T[K]> }
+              ? { -readonly [K in keyof T]: JsonifyValue<T[K]> }
               : T extends object
-                ? { [K in keyof T as [Jsonify<T[K]>] extends [never] ? never : K]: Jsonify<T[K]> }
+                ? { [K in keyof T as [JsonifyValue<T[K]>] extends [never] ? never : K]: JsonifyValue<T[K]> }
                 : never;

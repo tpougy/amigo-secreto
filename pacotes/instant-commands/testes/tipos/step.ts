@@ -29,3 +29,6 @@ yes<Eq<Jsonify<Date>, string>>();
 yes<Eq<Jsonify<{ a: Date[]; b?: number; c: undefined }>, { a: string[]; b?: number }>>();
 yes<Eq<Jsonify<[Date, number]>, [string, number]>>();
 yes<Eq<Jsonify<string | null>, string | null>>();
+yes<Eq<Jsonify<void>, null>>();
+yes<Eq<Jsonify<undefined>, null>>();
+yes<Eq<Jsonify<{ a: void; b: number }>, { b: number }>>();
