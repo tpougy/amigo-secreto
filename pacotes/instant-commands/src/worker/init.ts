@@ -28,7 +28,7 @@ export function initCommands<S extends InstantSchemaDef<any, any, any>>() {
     defineHandler: <C extends Command>(
       command: C,
       fn: (ctx: HandlerContext<C, S>) => Promise<ResultInputOf<C> | void>,
-      options?: HandlerOptions,
+      options?: HandlerOptions<C, S>,
     ): Handler<C, S> => defineHandler<C, S>(command, fn, options),
     defineSchedule: <const N extends string>(options: Schedule<S, N>): Schedule<S, N> => defineSchedule<S, N>(options),
     createRunner: <const Hs extends readonly Handler<any, S>[], const Ss extends readonly Schedule<S, string>[] = []>(

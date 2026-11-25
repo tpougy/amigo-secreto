@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { CommandResultError } from "../errors";
+import { CommandDefinitionError, CommandResultError } from "../errors";
 import { sortear } from "../../testes/app/commands";
 import { CommandFailure, defineHandler, failCommand, fail, completeChunk } from "./handler";
 
@@ -45,5 +45,19 @@ describe("defineHandler", () => {
     expect(h.fn).toBe(fn);
     expect(h.options).toEqual({ version: "2", defaultErrorMessage: "x" });
     expect(defineHandler(sortear, fn).options).toEqual({});
+  });
+
+  test("keeps onFailure in options", () => {
+    const onFailure = () => [];
+    expect(defineHandler(sortear, async () => {}, { onFailure }).options.onFailure).toBe(onFailure);
+  });
+
+  test("rejects an onFailure that is not a function", () => {
+    expect(() => defineHandler(sortear, async () => {}, { onFailure: "x" as any })).toThrow(CommandDefinitionError);
+    try {
+      defineHandler(sortear, async () => {}, { onFailure: 1 as any });
+    } catch (e) {
+      expect((e as CommandDefinitionError).problems).toEqual(["options.onFailure: must be a function"]);
+    }
   });
 });

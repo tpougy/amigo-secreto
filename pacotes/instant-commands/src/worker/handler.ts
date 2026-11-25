@@ -1,5 +1,6 @@
 import type { InstantAdminDatabase, InstantUnknownSchema, InstantSchemaDef, TransactionChunk } from "@instantdb/admin";
 import type { Command } from "../command";
+import { CommandDefinitionError } from "../errors";
 import type { CommandId, FieldValues, ResultInputOf } from "../types";
 import type { RetryPolicy } from "./engine";
 import { CommandFailure, fail } from "./failure";
@@ -38,19 +39,43 @@ export type HandlerContext<C extends Command, S extends InstantSchemaDef<any, an
   step: Step;
 };
 
-export type HandlerOptions = { version?: string; retryPolicy?: RetryPolicy; defaultErrorMessage?: string };
+export type FailureReason = "fail" | "error" | "invalid_result" | "invalid_input" | "step_limit";
+
+type FailureBase<S extends InstantSchemaDef<any, any, any>> = { db: InstantAdminDatabase<S>; error: string };
+
+export type FailureContext<C extends Command, S extends InstantSchemaDef<any, any, any> = InstantUnknownSchema> =
+  | (FailureBase<S> & { reason: Exclude<FailureReason, "invalid_input">; command: CommandRecord<C> })
+  | (FailureBase<S> & {
+      reason: "invalid_input";
+      command: { id: CommandId<C> } & { [K in keyof FieldValues<C>]?: unknown };
+    });
+
+/** Returns chunks committed in the same transaction that marks the command `failed`. */
+export type FailureHook<C extends Command, S extends InstantSchemaDef<any, any, any> = InstantUnknownSchema> = (
+  ctx: FailureContext<C, S>,
+) => TransactionChunk<any, any>[] | Promise<TransactionChunk<any, any>[]>;
+
+export type HandlerOptions<C extends Command = Command, S extends InstantSchemaDef<any, any, any> = InstantUnknownSchema> = {
+  version?: string;
+  retryPolicy?: RetryPolicy;
+  defaultErrorMessage?: string;
+  onFailure?: FailureHook<C, S>;
+};
 
 export type Handler<C extends Command, S extends InstantSchemaDef<any, any, any> = InstantUnknownSchema> = {
   command: C;
   fn: (ctx: HandlerContext<C, S>) => Promise<ResultInputOf<C> | void>;
-  options: HandlerOptions;
+  options: HandlerOptions<C, S>;
 };
 
 /** Declares what the worker runs for each command of type `command`. */
 export function defineHandler<C extends Command, S extends InstantSchemaDef<any, any, any> = InstantUnknownSchema>(
   command: C,
   fn: Handler<C, S>["fn"],
-  options: HandlerOptions = {},
+  options: HandlerOptions<C, S> = {},
 ): Handler<C, S> {
+  if (options.onFailure !== undefined && typeof options.onFailure !== "function") {
+    throw new CommandDefinitionError(command.name, ["options.onFailure: must be a function"]);
+  }
   return { command, fn, options };
 }
