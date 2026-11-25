@@ -169,8 +169,66 @@ O webhook cobre o "avisar". A varredura de pendentes continua necessária, via c
 | conclusão atômica junto com a escrita de negócio | quando apagar pedidos antigos |
 | agendamentos com a mesma interface | |
 
+## Análogos em outras ferramentas (pesquisa de 2026-11-25)
+
+Não há biblioteca equivalente para o Instant, mas o padrão existe há anos em outros lugares.
+
+**O mesmo padrão "pedido como documento":**
+- **Extensões do Firebase:** é o precedente mais forte.
+  - No Trigger Email, o cliente cria um documento em `mail` e a extensão preenche `delivery.state` (`PENDING → PROCESSING → SUCCESS | ERROR`) com `error`, `attempts` e `leaseExpireTime`, o prazo depois do qual um `PROCESSING` travado conta como falha.
+  - O cliente reenvia gravando `state: "RETRY"`.
+  - No Run Payments with Stripe, o cliente grava em `checkout_sessions` e espera com `onSnapshot` até aparecer `url` ou `error`.
+  - Cada extensão é uma funcionalidade fechada. Não existe um `defineRequest` genérico.
+- **Hasura:**
+  - As ações assíncronas devolvem um `action_id` e o cliente assina o resultado.
+  - Os Event Triggers entregam "pelo menos uma vez", mas com 0 tentativas extras por padrão.
+- **Jazz (Inbox API):** o cliente manda mensagens ao worker de servidor pela própria sincronização. Vem embutido, é experimental e exige o worker sempre no ar.
+
+**Reagir a mudanças com execução durável:**
+- **Inngest + Neon:** a replicação lógica do Postgres vira eventos, e os eventos disparam funções duráveis. Não tem convenção de status gravado de volta nem regras.
+- **Supabase:**
+  - os Database Webhooks (pg_net) não garantem a entrega;
+  - o Queues (pgmq) usa um prazo de visibilidade, depois do qual a mensagem volta para a fila;
+  - o Trigger.dev documenta o caminho webhook → Edge Function → task.
+  - Isso confirma a seção de webhook acima: sem varredura, um aviso perdido deixa o pedido parado.
+- **pgflow:** os fluxos são declarados em TypeScript e viram migrações SQL. É o mesmo espírito de `requestEntities(pedidos)`.
+- **Graphile Worker:** o `add_job` pode rodar dentro de um trigger do Postgres, então o job entra na fila na mesma transação da escrita.
+
+**O padrão ouro que o Instant não tem:**
+- No **Convex**, `ctx.scheduler.runAfter` dentro de uma mutação é transacional: se a mutação confirma, o job está agendado; se falha, nada é agendado. O componente `@convex-dev/workflow`, com Workpool e o callback `onComplete`, cuida da parte durável.
+- A campainha (assinatura, varredura e watchdog) só existe porque o Instant não deixa enfileirar trabalho dentro da transação.
+- Na prática, a biblioteca implementa uma **outbox transacional** em que a própria entidade do pedido é a outbox.
+
+**Motores duráveis que guardam o estado no banco** (alternativas ou referências ao OpenWorkflow):
+- **DBOS:** o ID do workflow é a chave de idempotência, e essa chave **não expira**.
+- **Absurd**, de Armin Ronacher: em produção desde 2025.
+- **Workflow DevKit da Vercel:** tem um backend Postgres sobre graphile-worker, mas exige servidor persistente.
+
+**Ecossistema do Instant:**
+- O fim do Instant Cloud está confirmado: o time foi para a OpenAI em agosto de 2026, os apps param em 31/08/2027 e os backups ficam até 31/08/2028.
+- Quem sair do Instant tende a ir para Convex, Pylon ou Supabase, que já têm funções de servidor.
+- O público da biblioteca é só quem continuar no Instant em hospedagem própria. Daí o plano de pacote pequeno mais um exemplo, sem apostar em adoção grande.
+
+## Ajustes que a comparação sugere
+
+1. **Estados:**
+   - incluir `processando` como opcional (os sorteios já usam: veja `perms.ts`);
+   - incluir um campo `tentativas`;
+   - talvez um "tentar de novo" pedido pelo cliente, como o `RETRY` do Firebase.
+2. **Checar o status antes do `run`, feito pela biblioteca:**
+   - A `idempotencyKey` do OpenWorkflow dura 24 h (veja `nucleo/disparar.ts`).
+   - Um pedido que continue `pendente` depois disso, por worker fora do ar ou run travado, ganharia um run novo a cada entrega.
+   - A garantia real é conferir que o pedido ainda está `pendente`, como `carregarReabertura` faz à mão. A biblioteca deve fazer isso antes de chamar `run`, sem deixar a cargo do app.
+3. **`mergePerms(base, pedidos)` no lugar de `...requestPerms(pedidos)`:** um pedido também precisa:
+   - das entradas em `$rateLimits`;
+   - das regras de `link`/`unlink` na entidade-mãe (`grupos.allow.link.reaberturas`);
+   - das regras que cruzam pedidos diferentes, como `semReaberturaPendente` no sorteio e o inverso na reabertura.
+   - Só espalhar um objeto não cobre isso.
+4. **OpenWorkflow atrás de uma interface interna estreita:** rodar com chave, `step.run` e agendamento. Não é para abstrair agora, só para não fechar a porta a DBOS ou Absurd.
+
 ## Pontos difíceis
 
+- Sem escrita condicional no Instant (até onde sei, não há compare-and-set), dois runs concorrentes ainda podem ler `pendente` ao mesmo tempo. A checagem de status reduz a janela mas não a fecha. Os passos precisam aguentar repetir.
 - Entrega "pelo menos uma vez" sem efeitos duplicados: os passos precisam aguentar repetir, e a biblioteca só pode ajudar com convenções e com `request.complete` na mesma transação.
 - Reconexão das assinaturas depois de quedas. A janela diária das 04:30 da VPS é um bom teste.
 - Compatibilidade com o Instant original e com o instantdb-rust. Por ser paridade, deve funcionar igual, mas os detalhes da resposta podem variar entre versões: por exemplo, um link vazio volta `null` no `fb241e1a` e ausente no `de47af8`.
