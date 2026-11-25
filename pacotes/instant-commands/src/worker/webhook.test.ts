@@ -219,4 +219,25 @@ describe("server", () => {
       await server.stop();
     }
   });
+
+  test("stop lets an in-flight request finish", async () => {
+    let entered!: () => void;
+    const inside = new Promise<void>((r) => (entered = r));
+    const server = startServer({
+      port: 0,
+      path: "/ic/hook",
+      healthPath: "/health",
+      maxBodyBytes: 1000,
+      handler: async () => {
+        entered();
+        await new Promise((r) => setTimeout(r, 300));
+        return new Response("late");
+      },
+    });
+    const pending = fetch(`http://127.0.0.1:${server.port}/ic/hook`, { method: "POST", body: "{}" });
+    await inside;
+    await server.stop();
+    const res = await pending;
+    expect(await res.text()).toBe("late");
+  });
 });

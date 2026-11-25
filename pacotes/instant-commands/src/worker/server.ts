@@ -17,8 +17,9 @@ export function startServer(options: {
   });
   return {
     port: server.port as number,
+    /** Stops accepting connections and waits for the requests in flight. */
     async stop() {
-      await server.stop(true);
+      await server.stop();
     },
   };
 }
