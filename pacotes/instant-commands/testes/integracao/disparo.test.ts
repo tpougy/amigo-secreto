@@ -52,7 +52,7 @@ describe("sweep", () => {
     expect(events).toEqual([{ type: "sweep", count }]);
   });
 
-  test("a failing dispatch does not stop the others and emits run.failed without command fields", async () => {
+  test("a failing dispatch does not stop the others and emits run.failed with only the command name and id", async () => {
     const a = await novoCommand();
     const b = await novoCommand();
     const dispatched: string[] = [];
@@ -66,8 +66,7 @@ describe("sweep", () => {
     await sweep(admin, engine, [sortear], (e) => events.push(e));
     expect(dispatched).toContain(b);
     const failure = events.find((e) => e.type === "run.failed");
-    expect(failure).toBeDefined();
-    expect(Object.keys(failure!).sort()).toEqual(["error", "type"]);
+    expect(failure).toEqual({ type: "run.failed", command: "sortear", commandId: a, error: "secret detail" });
   });
 
   test("the same command notified 3 times (sweep x3) runs the handler once", async () => {
