@@ -57,3 +57,25 @@ export type CommandState<C extends Command> = {
   createdAt: number;
   finishedAt: number | null;
 } | null;
+
+/**
+ * How a value looks after a JSON round trip: `Date` → `string`, arrays and objects recursively,
+ * `undefined` and function properties omitted.
+ */
+export type Jsonify<T> = 0 extends 1 & T
+  ? any
+  : unknown extends T
+    ? unknown
+    : T extends Date
+      ? string
+      : T extends string | number | boolean | null
+        ? T
+        : T extends undefined | symbol | ((...args: any[]) => any)
+          ? never
+          : T extends { toJSON(): infer J }
+            ? Jsonify<J>
+            : T extends readonly unknown[]
+              ? { -readonly [K in keyof T]: Jsonify<T[K]> }
+              : T extends object
+                ? { [K in keyof T as [Jsonify<T[K]>] extends [never] ? never : K]: Jsonify<T[K]> }
+                : never;
