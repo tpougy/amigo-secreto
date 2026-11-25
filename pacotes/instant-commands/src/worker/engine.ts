@@ -22,7 +22,12 @@ export interface Engine {
     fn: (ctx: { step: EngineStep }) => Promise<unknown>,
     options: { cron: string; timezone?: string; runOnStart?: boolean },
   ): void;
-  start(options: { concurrency: number }): Promise<void>;
+  /**
+   * Registers the schedules and starts the worker; a second call does nothing. A schedule that
+   * fails to register (or to run on start) goes to `onScheduleError` and does not stop the others
+   * nor the worker; without `onScheduleError` the error is thrown.
+   */
+  start(options: { concurrency: number; onScheduleError?: (name: string, error: unknown) => void }): Promise<void>;
   stop(): Promise<void>;
 }
 
@@ -67,7 +72,7 @@ type ScheduleSpec = ReturnType<typeof defineWorkflowSpec<null, unknown>>;
 /** The engine on top of an `OpenWorkflow` client. */
 export function openWorkflowEngine(ow: OpenWorkflow): Engine {
   const specs = new Map<string, Spec>();
-  const schedules: { spec: ScheduleSpec; options: { cron: string; timezone?: string; runOnStart?: boolean } }[] = [];
+  const schedules: { name: string; spec: ScheduleSpec; options: { cron: string; timezone?: string; runOnStart?: boolean } }[] = [];
   let worker: ReturnType<OpenWorkflow["newWorker"]> | undefined;
 
   return {
@@ -96,17 +101,24 @@ export function openWorkflowEngine(ow: OpenWorkflow): Engine {
       // `scheduleWorkflow` requires an unversioned spec.
       const spec = defineWorkflowSpec<null, unknown>({ name });
       ow.defineWorkflow(spec, ({ step }) => fn({ step: step as EngineStep }));
-      schedules.push({ spec, options });
+      schedules.push({ name, spec, options });
     },
 
-    async start({ concurrency }) {
-      for (const { spec, options } of schedules) {
-        await ow.scheduleWorkflow(spec, null, {
-          cron: options.cron,
-          ...(options.timezone === undefined ? {} : { timezone: options.timezone }),
-        });
-        if (options.runOnStart) await ow.runWorkflow(spec, null);
+    async start({ concurrency, onScheduleError }) {
+      if (worker) return;
+      for (const { name, spec, options } of schedules) {
+        try {
+          await ow.scheduleWorkflow(spec, null, {
+            cron: options.cron,
+            ...(options.timezone === undefined ? {} : { timezone: options.timezone }),
+          });
+          if (options.runOnStart) await ow.runWorkflow(spec, null);
+        } catch (error) {
+          if (!onScheduleError) throw error;
+          onScheduleError(name, error);
+        }
       }
+      if (worker) return;
       worker = ow.newWorker({ concurrency });
       await worker.start();
     },
