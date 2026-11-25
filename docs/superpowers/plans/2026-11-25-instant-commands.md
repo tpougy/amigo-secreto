@@ -769,3 +769,36 @@ test("direct POST from the internet is refused", …/* decisão (a): 403; decis�
 - [ ] **Step 2: Escrever os documentos.**
 - [ ] **Step 3: Rodar `bun run test` na raiz.** Expected: todas as suítes passam.
 - [ ] **Step 4: Commit** — `docs(commands): README, proposta para a VPS e status da spec`
+
+---
+
+## Pendências após a execução (2026-11-25)
+
+Itens menores que as revisões adiaram. Nada aqui bloqueia o uso. O que a rodada final já resolveu ficou de fora: content-length no webhook, TypeScript 5.9.3, `mergePerms` com base anotada e entre commands, varredura isolada por entidade, `json` obrigatório com `null` e README.
+
+- **Limite de steps × falha do Instant:** se o `markFailed` lançar no caminho do `StepLimitExceededError`, o erro original some e o `dispatch` volta a encadear retry. É raro, porque exige o Instant fora do ar no mesmo instante em que se chega a 1000 steps. Correção: `try/catch` em volta do `markFailed` e relançar sempre o erro original.
+- **`null` de `json` vira `undefined`:** o `ic:check` transforma o `null` de um campo `json` obrigatório em `undefined` antes de entregar ao handler.
+- **Eventos inconsistentes:**
+  - `run.failed` e `run.invalid_input` saem mesmo quando o `markFailed` não grava;
+  - `ic:finish` emite `run.done` para qualquer status diferente de `failed`.
+- **Cliente:** `waitForCommand` espera o timeout em vez de rejeitar logo quando a assinatura recebe um payload de erro; falta teste unitário do status `failed`.
+- **Tipos:**
+  - `Jsonify<never>` vira `null`;
+  - chave obrigatória com valor `undefined` não vira opcional;
+  - falta teste de tipo para `name` repetido;
+  - `Prettify` está duplicado;
+  - o teste do parâmetro `const` usa uma ficha que já é literal.
+- **Validação:** `validateResult` usa `instanceof Promise` em vez de checar thenable; `allow` ausente em JS puro dá `TypeError`; `allow.link` fica fora da checagem de `data.ref`.
+- **Testes a completar:**
+  - replay do marcador `__icFail`;
+  - callback de geração obsoleta na assinatura;
+  - rollback do `start()`;
+  - os testes que leem `__ops` dependem da forma interna do Instant;
+  - o nome do teste "wrong type" (ele cobre campo ausente).
+- **Runner:**
+  - `start()` que falhou não pode ser repetido no mesmo processo (documentado);
+  - `PORT` não numérico;
+  - a guarda de `start` do motor não protege chamadas concorrentes;
+  - nomes de step `ic:*` são reservados só na documentação.
+- **Código duplicado:** `isCommandFailure` aparece em `step.ts` e em `execution.ts`.
+- **Teste instável:** `client > core SDK path` deu timeout uma vez numa execução intermediária.
