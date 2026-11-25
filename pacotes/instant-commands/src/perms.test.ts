@@ -98,3 +98,37 @@ describe("conflicts", () => {
       mergePerms({ grupos: { allow: { unlink: { sorteios: "true" } } } } as any, [sortear] as any),
     ).toThrow(CommandDefinitionError));
 });
+
+describe("a command whose link points at another command's entity", () => {
+  const owner = defineCommand({ name: "owner", entity: "owners", fields: {}, allow: { create: "true", view: "true" } });
+  const pointer = defineCommand({
+    name: "pointer",
+    entity: "pointers",
+    fields: {},
+    links: {
+      pointerOwner: {
+        forward: { on: "pointers", has: "one", label: "owner" },
+        reverse: { on: "owners", has: "many", label: "pointers" },
+      },
+    },
+    allow: { create: "true", view: "true" },
+  });
+
+  for (const [label, list] of [
+    ["linking command first", [pointer, owner]],
+    ["linked command first", [owner, pointer]],
+  ] as const) {
+    test(label, () => {
+      const q = mergePerms({}, list as any) as any;
+      expect(q.owners.allow.create).toBe("(true) && data.status == 'pending' && data.attempts == 0");
+      expect(q.owners.allow.update).toBe("false");
+      expect(q.owners.allow.link).toEqual({ pointers: "true" });
+      expect(q.owners.allow.unlink).toEqual({ pointers: "true" });
+      expect(q.pointers.allow.link.owner).toBe("actions.data == 'create' && (true)");
+    });
+  }
+});
+
+test("the same command twice is reported as a repeated command", () => {
+  expect(() => mergePerms({}, [sortear, sortear] as any)).toThrow(/"sorteios" is used by more than one command/);
+});

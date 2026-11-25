@@ -1,5 +1,6 @@
 import type { Command } from "./command";
 import { CommandDefinitionError } from "./errors";
+import { assertUnique, type UniqueCommands } from "./schema";
 
 type Prettify<T> = { [K in keyof T]: T[K] } & {};
 type UnionToIntersection<U> = (U extends unknown ? (x: U) => void : never) extends (x: infer I) => void ? I : never;
@@ -43,7 +44,20 @@ export type GeneratedPerms<Cs extends readonly Command[]> = Prettify<
       : { $rateLimits: Prettify<UnionToIntersection<RateLimited<Cs[number]>>> })
 >;
 
-type Has<T, K extends string> = T extends Record<string, unknown> ? (K extends keyof T ? true : false) : false;
+/**
+ * `true` only when `K` is surely present in `T`: a required key of a literal. An index signature or
+ * an optional key (a base annotated as `InstantRules<Schema>`) is not known to be there, so it is
+ * left to the runtime check.
+ */
+type Has<T, K extends string> = T extends Record<string, unknown>
+  ? string extends keyof T
+    ? false
+    : K extends keyof T
+      ? {} extends Pick<T, K>
+        ? false
+        : true
+      : false
+  : false;
 type Sub<T, K extends string> = T extends Record<string, unknown> ? (K extends keyof T ? T[K] : undefined) : undefined;
 
 type ConflictOf<B, C> = C extends { entity: infer E extends string; rateLimit: object }
@@ -72,10 +86,16 @@ type ReverseConflict<B, C> = C extends { links: infer L extends Record<string, u
 
 type ConflictKey<B, Cs extends readonly Command[]> = ConflictOf<B, Cs[number]>;
 
-/** `Cs` when the base has no conflict; otherwise a readable sentence that fails the call. */
-export type PermsConflictCheck<B, Cs extends readonly Command[]> = [ConflictKey<B, Cs>] extends [never]
-  ? Cs
-  : `perms already defines "${Extract<ConflictKey<B, Cs>, string>}", which belongs to a command`;
+/**
+ * `Cs` when the commands are unique and the base has no conflict; otherwise a readable sentence
+ * that fails the call.
+ */
+export type PermsConflictCheck<B, Cs extends readonly Command[]> =
+  UniqueCommands<Cs> extends string
+    ? UniqueCommands<Cs>
+    : [ConflictKey<B, Cs>] extends [never]
+      ? Cs
+      : `perms already defines "${Extract<ConflictKey<B, Cs>, string>}", which belongs to a command`;
 
 type Rules = Record<string, any>;
 
@@ -110,6 +130,11 @@ export function mergePerms<const B extends Record<string, unknown>, const Cs ext
     return next.allow;
   };
 
+  assertUnique(list);
+
+  // Command sides first, then the reverse sides, so a link pointing at another command's entity is
+  // merged into that command's block whatever the order of the list.
+  const accepted: Command[] = [];
   for (const c of list) {
     if (c.entity in base) {
       problems.push(`perms already defines "${c.entity}", which belongs to command "${c.name}"`);
@@ -125,16 +150,6 @@ export function mergePerms<const B extends Record<string, unknown>, const Cs ext
     for (const l of Object.values(c.links ?? {})) {
       link[l.forward.label] = `actions.data == 'create' && (${c.allow.link?.[l.forward.label] ?? "true"})`;
       unlink[l.forward.label] = "false";
-
-      const allow = reverseEntity(l.reverse.on);
-      for (const [side, map] of [["link", allow.link], ["unlink", allow.unlink]] as const) {
-        if (l.reverse.label in map) {
-          problems.push(
-            `perms already defines "${l.reverse.on}.allow.${side}.${l.reverse.label}", which belongs to command "${c.name}"`,
-          );
-        }
-        map[l.reverse.label] = "true";
-      }
     }
 
     const rate = c.rateLimit ? `rateLimit.${c.entity}.limit(auth.id) && ` : "";
@@ -152,6 +167,21 @@ export function mergePerms<const B extends Record<string, unknown>, const Cs ext
     if (c.rateLimit) {
       rateLimits[c.entity] = c.rateLimit;
       addedRateLimit = true;
+    }
+    accepted.push(c);
+  }
+
+  for (const c of accepted) {
+    for (const l of Object.values(c.links ?? {})) {
+      const allow = reverseEntity(l.reverse.on);
+      for (const [side, map] of [["link", allow.link], ["unlink", allow.unlink]] as const) {
+        if (l.reverse.label in map) {
+          problems.push(
+            `perms already defines "${l.reverse.on}.allow.${side}.${l.reverse.label}", which belongs to command "${c.name}"`,
+          );
+        }
+        map[l.reverse.label] = "true";
+      }
     }
   }
 

@@ -54,7 +54,8 @@ function standardAttrs(): Record<string, DataAttrDef<any, any, any, any>> {
   };
 }
 
-function assertUnique(commands: readonly Command[]): void {
+/** Throws `CommandDefinitionError` when two commands share an entity or a name. */
+export function assertUnique(commands: readonly Command[]): void {
   const problems: string[] = [];
   for (const key of ["entity", "name"] as const) {
     const seen = new Set<string>();
