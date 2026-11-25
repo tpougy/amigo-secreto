@@ -376,6 +376,8 @@ the event history, readable with the same token).
 - **`onEvent` may receive exception messages.** Treat it as sensitive (logs, not the client). Do not
   rely on it to throw: exceptions in it are swallowed.
 - **A failed `runner.start()` cannot be retried in the same process.** Restart the process.
+- **OpenWorkflow's step limit (1000 step attempts per run) is final.** The command is marked
+  `failed` with `defaultErrorMessage` and no retry run is opened for it.
 - **The nginx `allow` rule is a coarse filter.** The Ed25519 signature is the real protection.
 - **Spreading `commandEntities` / `commandLinks` silently overwrites** an app entity or link with the
   same name. `mergePerms` catches the entity when it has rules, but not a link or an entity without

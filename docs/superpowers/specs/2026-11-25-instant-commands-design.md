@@ -325,6 +325,7 @@ export const reabrirGrupoHandler = defineHandler(reabrirGrupo, executarReabertur
 - **Exceção inesperada** (depois de esgotados os retries do step): `status: "failed"` com `defaultErrorMessage`. A mensagem e a pilha da exceção vão só para o `onEvent`, nunca para o banco.
 - **O handler retornou sem chamar `command.complete`**: a biblioteca grava `done` sozinha, com o valor retornado como `result`, validado como em `complete`. O tipo do retorno do handler é conferido contra `ResultOf<cmd>`.
 - **Resultado inválido** (`CommandResultError`): segue o caminho da exceção inesperada.
+- **Limite de steps do OpenWorkflow** (1000 tentativas de step por run): falha definitiva. A biblioteca grava `failed` com `defaultErrorMessage` fora de qualquer step (nenhum step pode mais ser gravado), emite `run.failed` com o erro real, e o disparo não encadeia `:retry:` para um run que falhou por esse limite (senão cada varredura reexecutaria todos os steps).
 - **Command apagado durante o run:** a biblioteca confere a existência antes de cada escrita de status e, se ele não existe mais, não escreve nada. O handler continua responsável pelas próprias escritas. O `command.complete()` dentro de um `transact` faz `update` num id apagado: o handler deve reler antes, como o `reabrir()` atual faz. A biblioteca não consegue evitar isso sozinha sem escrita condicional.
 
 ## Runner: `createRunner`

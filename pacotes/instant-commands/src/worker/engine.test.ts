@@ -1,7 +1,7 @@
 import { afterEach, expect, setDefaultTimeout, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { esperarAte, owTemporario } from "../../testes/helpers";
-import { engineControlFlow, isFinalStepFailure, openWorkflowEngine, type Engine } from "./engine";
+import { engineControlFlow, isFinalStepFailure, isStepLimitExceeded, openWorkflowEngine, type Engine } from "./engine";
 import { createStep } from "./step";
 
 setDefaultTimeout(30_000);
@@ -222,3 +222,30 @@ test("stop waits for an in-flight run", async () => {
   await engine.stop();
   expect(finished).toBe(true);
 });
+
+test("isStepLimitExceeded: the live error and its stored form", () => {
+  expect(isStepLimitExceeded(Object.assign(new Error("x"), { name: "StepLimitExceededError" }))).toBe(true);
+  expect(isStepLimitExceeded({ name: "StepLimitExceededError", message: "x", code: "STEP_LIMIT_EXCEEDED" })).toBe(true);
+  expect(isStepLimitExceeded({ message: "x", code: "STEP_LIMIT_EXCEEDED" })).toBe(true);
+  expect(isStepLimitExceeded({ name: "Error", message: "x" })).toBe(false);
+  expect(isStepLimitExceeded(null)).toBe(false);
+});
+
+test("a run past the step limit fails for good: dispatch does not chain a retry", async () => {
+  const { engine, runs, waitFinished } = setup("step-limit");
+  let calls = 0;
+  engine.define("limit", undefined, async ({ step }) => {
+    calls++;
+    for (let n = 0; n <= 1000; n++) await step.run({ name: `s${n}` }, () => n);
+    return null;
+  });
+  await startEngine(engine);
+  await engine.dispatch("limit", "c1");
+  const first = await waitFinished("c1");
+  expect(first.status).toBe("failed");
+
+  await engine.dispatch("limit", "c1");
+  await new Promise((r) => setTimeout(r, 300));
+  expect(runs("where idempotency_key like ?", "c1:retry:%")).toHaveLength(0);
+  expect(calls).toBe(1);
+}, 60_000);

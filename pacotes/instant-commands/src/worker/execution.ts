@@ -3,7 +3,7 @@ import type { InstantAdminDatabase } from "@instantdb/admin";
 import type { Command } from "../command";
 import { validateInput } from "../fields";
 import { validateResult } from "../result";
-import { engineControlFlow, isFinalStepFailure, type Engine } from "./engine";
+import { engineControlFlow, isFinalStepFailure, isStepLimitExceeded, type Engine, type EngineStep } from "./engine";
 import { CommandFailure } from "./failure";
 import { completeChunk, type CommandHandle, type Handler } from "./handler";
 import { markDone, markFailed, markRunning } from "./status";
@@ -76,6 +76,21 @@ export function registerHandler(
   const base = { command: command.name };
 
   engine.define(command.name, version, async ({ input: { commandId }, step: engineStep }) => {
+    const ev = { ...base, commandId };
+    try {
+      return await runCommand(commandId, engineStep);
+    } catch (e) {
+      // The step limit is final: no step can be recorded anymore (so the write happens outside any
+      // step), and the engine does not open a new run for it.
+      if (isStepLimitExceeded(e)) {
+        await markFailed(db, command, commandId, defaultErrorMessage);
+        emit({ type: "run.failed", ...ev, error: messageOf(e) });
+      }
+      throw e;
+    }
+  });
+
+  async function runCommand(commandId: string, engineStep: EngineStep): Promise<null> {
     const ev = { ...base, commandId };
 
     // Each status write and its event live in an internal step: done once, not repeated on replay.
@@ -161,5 +176,5 @@ export function registerHandler(
     });
     if (finish.outcome === "invalid_result") await failStep(defaultErrorMessage, finish.error);
     return null;
-  });
+  }
 }

@@ -297,4 +297,25 @@ describe("command execution", () => {
     expect(r?.result).toEqual({ pares: 5 });
     expect(r?.error).toBeNull();
   });
+
+  test("handler past the step limit → failed for good, no retry run re-executes its steps", async () => {
+    let calls = 0;
+    const h = defineHandler(sortear, async ({ step }) => {
+      calls++;
+      for (let n = 0; n <= 1000; n++) await step.run(`s${n}`, () => n);
+      return { pares: 1 };
+    });
+    const { engine, events } = await rodar("limite", h);
+    const { cid } = await novoCommand();
+    await engine.dispatch("sortear", cid);
+    const r = await esperarFim(cid);
+    expect(r.status).toBe("failed");
+    expect(r.error).toBe(DEFAULT_ERROR);
+    const ev = await esperarEvento(events, cid, "run.failed");
+    expect(ev.error).toMatch(/step limit/);
+    // A sweep would dispatch it again: no new run.
+    await engine.dispatch("sortear", cid);
+    await new Promise((res) => setTimeout(res, 500));
+    expect(calls).toBe(1);
+  }, 60_000);
 });

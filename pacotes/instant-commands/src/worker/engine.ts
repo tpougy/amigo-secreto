@@ -61,6 +61,13 @@ export function engineControlFlow(error: unknown): boolean {
   return false;
 }
 
+/** `true` for OpenWorkflow's step-limit error, live or as stored on a failed run. */
+export function isStepLimitExceeded(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const e = error as { name?: unknown; code?: unknown };
+  return e.name === "StepLimitExceededError" || e.code === "STEP_LIMIT_EXCEEDED";
+}
+
 /** A step failure with no attempts left; `originalError` is what the step threw. */
 export function isFinalStepFailure(error: unknown): error is { name: "StepError"; originalError: unknown } {
   return isStepError(error) && !engineControlFlow(error);
@@ -85,14 +92,15 @@ export function openWorkflowEngine(ow: OpenWorkflow): Engine {
     /**
      * Ensures a live (or finished) run for `commandId`. The idempotency key holds any run for
      * 24 h, a failed one included; then ONE new run is opened with `<commandId>:retry:<failedRunId>`,
-     * deterministic so repeated deliveries land on the same run.
+     * deterministic so repeated deliveries land on the same run. A run that failed on the step
+     * limit is final: a new run would redo every step and hit the limit again.
      */
     async dispatch(name, commandId) {
       const spec = specs.get(name);
       if (!spec) throw new Error(`Unknown workflow "${name}"`);
       const input = { commandId };
       let h = await ow.runWorkflow(spec, input, { idempotencyKey: commandId });
-      while (h.workflowRun.status === "failed") {
+      while (h.workflowRun.status === "failed" && !isStepLimitExceeded(h.workflowRun.error)) {
         h = await ow.runWorkflow(spec, input, { idempotencyKey: `${commandId}:retry:${h.workflowRun.id}` });
       }
     },
