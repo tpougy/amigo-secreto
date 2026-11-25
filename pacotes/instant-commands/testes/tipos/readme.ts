@@ -14,6 +14,7 @@ export const draw = icDef.defineCommand({
   entity: "draws",
   fields: {
     round: i.number(),
+    key: i.string().unique(), // `<groupId>:<round>`: one draw per group and round
   },
   links: {
     drawGroup: {
@@ -99,14 +100,15 @@ async function runDraw({ db, command, step }: Ctx<typeof draw>) {
   await step.run("apply", applyDraw, db, command, group.id);
 }
 
-// Runs in the same transaction that marks the command `failed`, on every failure path.
-async function reopenGroup({ db, command }: icWorker.FailureContext<typeof draw, AppSchema>) {
-  const { draws } = await db.query({ draws: { $: { where: { id: command.id } }, group: {} } });
-  const group = draws[0]?.group;
-  return group ? [db.tx.groups[group.id].update({ status: "open" })] : [];
+// Runs in the same transaction that marks the command `failed`, on every failure path. It releases
+// the reservation the command holds (its unique `key`) so the same draw can be sent again. Do not
+// roll back business state here (the command's effects may never have happened) and keep side
+// effects in `onEvent`.
+function releaseKey({ db, command }: icWorker.FailureContext<typeof draw, AppSchema>) {
+  return [db.tx.draws[command.id].update({ key: `${command.key}:failed:${command.id}` })];
 }
 
-export const drawHandler = defineHandler(draw, runDraw, { version: "1", onFailure: reopenGroup });
+export const drawHandler = defineHandler(draw, runDraw, { version: "1", onFailure: releaseKey });
 
 // ---- worker/main.ts --------------------------------------------------------------------------
 const db = initAdmin({
@@ -148,7 +150,7 @@ function showState(state: icClient.CommandState<typeof draw>) {
 }
 
 export async function onDrawClick(groupId: string) {
-  const id = await icClient.sendCommand(clientDb, draw, { group: groupId, round: 1 });
+  const id = await icClient.sendCommand(clientDb, draw, { group: groupId, round: 1, key: `${groupId}:1` });
   const stop = icClient.subscribeCommand(clientDb, draw, id, showState);
   const final = await icClient.waitForCommand(clientDb, draw, id, { timeoutMs: 30_000 });
   stop();

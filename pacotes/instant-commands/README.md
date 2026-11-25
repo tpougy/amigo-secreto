@@ -44,6 +44,7 @@ export const draw = ic.defineCommand({
   entity: "draws",       // where commands live; also the rate limit key
   fields: {
     round: i.number(),
+    key: i.string().unique(), // `<groupId>:<round>`: one draw per group and round
   },
   links: {
     drawGroup: {
@@ -185,14 +186,15 @@ async function runDraw({ db, command, step }: Ctx<typeof draw>) {
   await step.run("apply", applyDraw, db, command, group.id);
 }
 
-// Runs in the same transaction that marks the command `failed`, on every failure path.
-async function reopenGroup({ db, command }: ic.FailureContext<typeof draw, AppSchema>) {
-  const { draws } = await db.query({ draws: { $: { where: { id: command.id } }, group: {} } });
-  const group = draws[0]?.group;
-  return group ? [db.tx.groups[group.id].update({ status: "open" })] : [];
+// Runs in the same transaction that marks the command `failed`, on every failure path. It releases
+// the reservation the command holds (its unique `key`) so the same draw can be sent again. Do not
+// roll back business state here (the command's effects may never have happened) and keep side
+// effects in `onEvent`.
+function releaseKey({ db, command }: ic.FailureContext<typeof draw, AppSchema>) {
+  return [db.tx.draws[command.id].update({ key: `${command.key}:failed:${command.id}` })];
 }
 
-export const drawHandler = defineHandler(draw, runDraw, { version: "1", onFailure: reopenGroup });
+export const drawHandler = defineHandler(draw, runDraw, { version: "1", onFailure: releaseKey });
 ```
 
 ```ts
@@ -266,8 +268,8 @@ process.on("SIGTERM", () => void runner.stop().then(() => process.exit(0)));
   starting with `"onFailure: "` (`"onFailure: must return transaction chunks"` for the non-chunk
   case); if Instant rejects the transaction (an `InstantAPIError` 4xx, except 408 and 429),
   `failed` is written alone and an extra `run.failed` event has
-  `error: "onFailure rejected: <message>"`. Other transaction errors propagate and the internal step
-  is retried. The hook does not run when the command is `done`, was deleted or already finished,
+  `error: "onFailure rejected: <message>"`. Other transaction errors propagate (and, except on the step-limit path, which runs outside any
+  step, the internal step is retried). The hook does not run when the command is `done`, was deleted or already finished,
   or when the handler itself wrote `failed` with `failCommand` inside its own transaction.
 
 `defineHandler(command, fn, { version, retryPolicy, defaultErrorMessage, onFailure })`: `version` is the
@@ -294,7 +296,7 @@ function showState(state: ic.CommandState<typeof draw>) {
 }
 
 async function onDrawClick(groupId: string) {
-  const id = await ic.sendCommand(db, draw, { group: groupId, round: 1 });
+  const id = await ic.sendCommand(db, draw, { group: groupId, round: 1, key: `${groupId}:1` });
   const stop = ic.subscribeCommand(db, draw, id, showState);
   const final = await ic.waitForCommand(db, draw, id, { timeoutMs: 30_000 }); // for scripts and tests
   stop();
