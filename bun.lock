@@ -92,6 +92,20 @@
         "@types/bun": "1.4.5",
       },
     },
+    "pacotes/instant-commands": {
+      "name": "instant-commands",
+      "dependencies": {
+        "@instantdb/admin": "1.0.67",
+        "@instantdb/core": "1.0.67",
+        "@standard-schema/spec": "1.1.0",
+        "openworkflow": "0.11.0",
+      },
+      "devDependencies": {
+        "@types/bun": "1.4.5",
+        "typescript": "6.0.3",
+        "zod": "4.6.7",
+      },
+    },
     "scripts/seed": {
       "name": "@amigo/seed",
       "dependencies": {
@@ -720,6 +734,8 @@
     "inherits": ["inherits@2.0.4", "", {}, "sha512-k/vGaX4/Yla3WzyMCvTQOXYeIHvqOKtnqBduzTHpzpQZzAskKMhZ2K+EnBiSM9zGSoIFeMpXKxa4dYeZIQqewQ=="],
 
     "inline-style-parser": ["inline-style-parser@0.2.7", "", {}, "sha512-Nb2ctOyNR8DqQoR0OwRG95uNWIC0C1lCgf5Naz5H6Ji72KZ8OcFZLz2P5sNgwlyoJ8Yif11oMuYs5pBQa86csA=="],
+
+    "instant-commands": ["instant-commands@workspace:pacotes/instant-commands"],
 
     "ip-address": ["ip-address@10.7.6", "", {}, "sha512-00LYkM6byILa9eQIx6qoaXCM40xTLd56AZ4vyaPW3YTyb49VZYPo5xsiAq4tuQ54GH4R7gVdYScJ1B7B77PuTg=="],
 

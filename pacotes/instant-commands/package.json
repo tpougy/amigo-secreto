@@ -1,0 +1,26 @@
+{
+  "name": "instant-commands",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema.ts",
+    "./perms": "./src/perms.ts",
+    "./client": "./src/client.ts",
+    "./worker": "./src/worker/index.ts"
+  },
+  "scripts": {
+    "test": "tsc --noEmit -p . && bun --env-file=../../.env test src testes/integracao"
+  },
+  "dependencies": {
+    "@instantdb/core": "1.0.67",
+    "@instantdb/admin": "1.0.67",
+    "openworkflow": "0.11.0",
+    "@standard-schema/spec": "1.1.0"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3",
+    "@types/bun": "1.4.5",
+    "zod": "4.6.7"
+  }
+}
