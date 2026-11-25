@@ -88,6 +88,10 @@ export async function markFailed(
     try {
       const out = await extras(row as Record<string, any>);
       if (!Array.isArray(out)) throw new Error("the hook did not return an array of transaction chunks");
+      // Anything else would make `transact` throw a non-Instant error and leave the command open.
+      if (!out.every((c) => Array.isArray((c as { __ops?: unknown } | null)?.__ops))) {
+        throw new Error("must return transaction chunks");
+      }
       chunks = out;
     } catch (e) {
       extrasError = `onFailure: ${errorMessage(e)}`;

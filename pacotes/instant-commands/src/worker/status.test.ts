@@ -14,7 +14,7 @@ const rejection = () => Object.assign(new Error("not unique"), { name: "InstantA
 describe("markFailed with extras", () => {
   test("calls extras with the stored record and writes failed + extras in ONE transact", async () => {
     const { db, transact } = fakeDb([open]);
-    const extra = { extra: true };
+    const extra = { __ops: [["update", "x", "1", {}]] };
     const extras = mock(async (_r: Record<string, any>) => [extra] as any[]);
     const res = await markFailed(db, sortear, "c1", "m", extras);
     expect(res).toEqual({ written: true });
@@ -58,13 +58,21 @@ describe("markFailed with extras", () => {
     expect(transact.mock.calls[0]![0] as any[]).toHaveLength(1);
   });
 
+  test("extras that returns an array with a non-chunk → failed alone, extrasError 'onFailure: must return transaction chunks'", async () => {
+    const { db, transact } = fakeDb([open]);
+    const res = await markFailed(db, sortear, "c1", "m", (async () => [{}]) as any);
+    expect(res).toEqual({ written: true, extrasError: "onFailure: must return transaction chunks" });
+    expect(transact).toHaveBeenCalledTimes(1);
+    expect(transact.mock.calls[0]![0] as any[]).toHaveLength(1);
+  });
+
   test("rejected transact (InstantAPIError 400) with extras → retries with failed only, extrasError 'onFailure rejected: …'", async () => {
     const transact = mock(async (_: unknown) => ({}));
     transact.mockImplementationOnce(async () => {
       throw rejection();
     });
     const { db } = fakeDb([open], transact);
-    const res = await markFailed(db, sortear, "c1", "m", async () => [{ x: 1 }] as any[]);
+    const res = await markFailed(db, sortear, "c1", "m", async () => [{ __ops: [] }] as any[]);
     expect(res).toEqual({ written: true, extrasError: "onFailure rejected: not unique" });
     expect(transact).toHaveBeenCalledTimes(2);
     expect(transact.mock.calls[0]![0] as any[]).toHaveLength(2);
@@ -77,7 +85,7 @@ describe("markFailed with extras", () => {
       throw new TypeError("fetch failed");
     });
     const { db } = fakeDb([open], transact);
-    await expect(markFailed(db, sortear, "c1", "m", async () => [{ x: 1 }] as any[])).rejects.toThrow("fetch failed");
+    await expect(markFailed(db, sortear, "c1", "m", async () => [{ __ops: [] }] as any[])).rejects.toThrow("fetch failed");
     expect(transact).toHaveBeenCalledTimes(1);
   });
 

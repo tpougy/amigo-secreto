@@ -5,8 +5,8 @@ import { validateInput } from "../fields";
 import { validateResult } from "../result";
 import { engineControlFlow, isFinalStepFailure, isStepLimitExceeded, type Engine, type EngineStep } from "./engine";
 import { CommandFailure } from "./failure";
-import { completeChunk, type CommandHandle, type Handler } from "./handler";
-import { markDone, markFailed, markRunning } from "./status";
+import { completeChunk, type CommandHandle, type FailureReason, type Handler } from "./handler";
+import { markDone, markFailed, markRunning, type FailureExtras, type MarkFailedResult } from "./status";
 import { createStep } from "./step";
 
 /**
@@ -74,6 +74,34 @@ export function registerHandler(
   const { version, retryPolicy } = handler.options;
   const defaultErrorMessage = handler.options.defaultErrorMessage ?? DEFAULT_ERROR_MESSAGE;
   const base = { command: command.name };
+  const fieldNames = Object.keys(command.fields ?? {});
+
+  /**
+   * The `onFailure` hook, wrapped for `markFailed`: it gets the record re-read there, reduced to the
+   * command's fields that are present. Called only through `markFailed`, so its chunks are written at
+   * most once, together with `failed`.
+   */
+  function extrasFor(commandId: string, reason: FailureReason, message: string): FailureExtras | undefined {
+    const hook = handler.options.onFailure;
+    if (!hook) return undefined;
+    return async (record) => {
+      const fields: Record<string, unknown> = {};
+      for (const name of fieldNames) {
+        if (record[name] !== undefined && record[name] !== null) fields[name] = record[name];
+      }
+      return hook({ db, reason, error: message, command: { id: commandId, ...fields } } as any);
+    };
+  }
+
+  /** `markFailed` with the hook; the caller emits its own event, then `reportExtras`. */
+  async function writeFailed(commandId: string, reason: FailureReason, message: string): Promise<MarkFailedResult> {
+    return markFailed(db, command, commandId, message, extrasFor(commandId, reason, message));
+  }
+
+  /** The extra `run.failed` when the hook's chunks could not be written. */
+  function reportExtras(result: MarkFailedResult, commandId: string): void {
+    if (result.extrasError !== undefined) emit({ type: "run.failed", ...base, commandId, error: result.extrasError });
+  }
 
   engine.define(command.name, version, async ({ input: { commandId }, step: engineStep }) => {
     const ev = { ...base, commandId };
@@ -83,8 +111,9 @@ export function registerHandler(
       // The step limit is final: no step can be recorded anymore (so the write happens outside any
       // step), and the engine does not open a new run for it.
       if (isStepLimitExceeded(e)) {
-        await markFailed(db, command, commandId, defaultErrorMessage);
+        const result = await writeFailed(commandId, "step_limit", defaultErrorMessage);
         emit({ type: "run.failed", ...ev, error: messageOf(e) });
+        reportExtras(result, commandId);
       }
       throw e;
     }
@@ -94,7 +123,7 @@ export function registerHandler(
     const ev = { ...base, commandId };
 
     // Each status write and its event live in an internal step: done once, not repeated on replay.
-    const failStep = (message: string, error: string) =>
+    const failStep = (reason: FailureReason, message: string, error: string) =>
       engineStep.run({ name: "ic:fail" }, async () => {
         // A deleted command is skipped; one already finished (e.g. by the handler itself) is not
         // overwritten, but the failure is still reported.
@@ -102,8 +131,9 @@ export function registerHandler(
           emit({ type: "run.skipped", ...ev });
           return null;
         }
-        await markFailed(db, command, commandId, message);
+        const result = await writeFailed(commandId, reason, message);
         emit({ type: "run.failed", ...ev, error });
+        reportExtras(result, commandId);
         return null;
       });
 
@@ -118,8 +148,9 @@ export function registerHandler(
       const problems = validateInput(command, record, "worker");
       if (problems.length > 0) {
         const fields = [...new Set(problems.map((p) => p.slice(0, p.indexOf(":"))))];
-        await markFailed(db, command, commandId, defaultErrorMessage);
+        const result = await writeFailed(commandId, "invalid_input", defaultErrorMessage);
         emit({ type: "run.invalid_input", ...ev, fields });
+        reportExtras(result, commandId);
         return { proceed: true, invalid: fields };
       }
       const values: Record<string, unknown> = {};
@@ -144,12 +175,12 @@ export function registerHandler(
       if (engineControlFlow(e)) throw e;
       // 5. fail(message): the message is the command's error.
       if (isCommandFailure(e)) {
-        await failStep(e.message, e.message);
+        await failStep("fail", e.message, e.message);
         return null;
       }
       // 6. Final step failure or any other exception: generic message; the real one only goes to the event.
       const original = isFinalStepFailure(e) ? e.originalError : e;
-      await failStep(defaultErrorMessage, messageOf(original));
+      await failStep("error", defaultErrorMessage, messageOf(original));
       return null;
     }
 
@@ -174,7 +205,7 @@ export function registerHandler(
       emit({ type: record.status === "failed" ? "run.failed" : "run.done", ...ev });
       return { outcome: "done" };
     });
-    if (finish.outcome === "invalid_result") await failStep(defaultErrorMessage, finish.error);
+    if (finish.outcome === "invalid_result") await failStep("invalid_result", defaultErrorMessage, finish.error);
     return null;
   }
 }

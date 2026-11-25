@@ -5,7 +5,7 @@ import { sendCommand } from "../../src/client";
 import { defineCommand } from "../../src/index";
 import { openWorkflowEngine } from "../../src/worker/engine";
 import { registerHandler, type RunnerEvent } from "../../src/worker/execution";
-import { defineHandler, fail, type Handler } from "../../src/worker/handler";
+import { defineHandler, fail, failCommand, type FailureContext, type FailureHook, type Handler } from "../../src/worker/handler";
 import { markDone, markRunning } from "../../src/worker/status";
 import { sortear } from "../app/commands";
 import { adminIC, criarGrupo, esperarAte, limpar, limparRestos, novoPrefixo, novoUsuario, owTemporario } from "../helpers";
@@ -44,15 +44,11 @@ async function rodar(nome: string, handler: Handler<any, any>) {
   return { engine, events };
 }
 
-async function novoCommand(): Promise<{ cid: string; grupoId: string }> {
+async function novoCommand(chave = `${PREFIXO}-${crypto.randomUUID()}`): Promise<{ cid: string; grupoId: string; chave: string }> {
   const org = await novoUsuario(PREFIXO);
   const grupoId = await criarGrupo(PREFIXO, org);
-  const cid = await sendCommand(org.db, sortear, {
-    rodada: 1,
-    chave: `${PREFIXO}-${crypto.randomUUID()}`,
-    grupo: grupoId,
-  });
-  return { cid, grupoId };
+  const cid = await sendCommand(org.db, sortear, { rodada: 1, chave, grupo: grupoId });
+  return { cid, grupoId, chave };
 }
 
 async function ler(cid: string) {
@@ -300,11 +296,21 @@ describe("command execution", () => {
 
   test("handler past the step limit → failed for good, no retry run re-executes its steps", async () => {
     let calls = 0;
-    const h = defineHandler(sortear, async ({ step }) => {
-      calls++;
-      for (let n = 0; n <= 1000; n++) await step.run(`s${n}`, () => n);
-      return { pares: 1 };
-    });
+    const reasons: string[] = [];
+    const h = defineHandler(
+      sortear,
+      async ({ step }) => {
+        calls++;
+        for (let n = 0; n <= 1000; n++) await step.run(`s${n}`, () => n);
+        return { pares: 1 };
+      },
+      {
+        onFailure: (ctx) => {
+          reasons.push(ctx.reason);
+          return [];
+        },
+      },
+    );
     const { engine, events } = await rodar("limite", h);
     const { cid } = await novoCommand();
     await engine.dispatch("sortear", cid);
@@ -317,5 +323,142 @@ describe("command execution", () => {
     await engine.dispatch("sortear", cid);
     await new Promise((res) => setTimeout(res, 500));
     expect(calls).toBe(1);
+    expect(reasons).toEqual(["step_limit"]);
   }, 60_000);
+});
+
+/** Hook that records each ctx and renames the unique `chave` so it can be reused. */
+function liberarChave(seen: FailureContext<any>[]): FailureHook<any> {
+  return (ctx) => {
+    seen.push(ctx);
+    const { id, chave } = ctx.command as unknown as { id: string; chave: unknown };
+    return [admin.tx.sorteios[id]!.update({ chave: `${chave}:erro:${id}` })];
+  };
+}
+
+describe("onFailure", () => {
+  test("step that exhausts retries → hook frees the chave; a new command with the same chave is accepted", async () => {
+    const seen: FailureContext<typeof sortear>[] = [];
+    const h = defineHandler(
+      sortear,
+      async ({ step }) => {
+        await step.run({ name: "x", retryPolicy: { maximumAttempts: 2, initialInterval: "10ms" } }, () => {
+          throw new Error("database exploded");
+        });
+      },
+      { retryPolicy: { maximumAttempts: 2, initialInterval: "10ms" }, onFailure: liberarChave(seen) },
+    );
+    const { engine } = await rodar("of-esgota", h);
+    const { cid, chave } = await novoCommand();
+    await engine.dispatch("sortear", cid);
+    const r = await esperarFim(cid);
+    expect(r.status).toBe("failed");
+    expect(r.error).toBe(DEFAULT_ERROR);
+    expect(r.chave).toBe(`${chave}:erro:${cid}`);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.reason).toBe("error");
+    expect(seen[0]!.error).toBe(DEFAULT_ERROR);
+    expect(seen[0]!.command.id as string).toBe(cid);
+    expect(seen[0]!.command.chave).toBe(chave);
+    const again = await novoCommand(chave);
+    expect(typeof again.cid).toBe("string");
+  });
+
+  test("fail('msg') → hook gets reason 'fail' and error 'msg'", async () => {
+    const seen: FailureContext<typeof sortear>[] = [];
+    const h = defineHandler(sortear, async () => fail("msg"), { onFailure: liberarChave(seen) });
+    const { engine } = await rodar("of-fail", h);
+    const { cid, chave } = await novoCommand();
+    await engine.dispatch("sortear", cid);
+    const r = await esperarFim(cid);
+    expect(r.status).toBe("failed");
+    expect(r.error).toBe("msg");
+    expect(r.chave).toBe(`${chave}:erro:${cid}`);
+    expect(seen.map((c) => [c.reason, c.error])).toEqual([["fail", "msg"]]);
+  });
+
+  test("invalid returned result → reason 'invalid_result'", async () => {
+    const seen: FailureContext<typeof sortear>[] = [];
+    const h = defineHandler(sortear, async () => ({ pares: "many" }) as any, { onFailure: liberarChave(seen) });
+    const { engine } = await rodar("of-resultado", h);
+    const { cid, chave } = await novoCommand();
+    await engine.dispatch("sortear", cid);
+    const r = await esperarFim(cid);
+    expect(r.status).toBe("failed");
+    expect(r.error).toBe(DEFAULT_ERROR);
+    expect(r.chave).toBe(`${chave}:erro:${cid}`);
+    expect(seen.map((c) => [c.reason, c.error])).toEqual([["invalid_result", DEFAULT_ERROR]]);
+  });
+
+  test("stored input invalid → reason 'invalid_input', command has only present fields", async () => {
+    const sortearNovo = defineCommand({
+      ...sortear,
+      name: "sortearNovo",
+      fields: { ...sortear.fields, prioridade: i.number() },
+    });
+    const seen: FailureContext<typeof sortearNovo>[] = [];
+    const h = defineHandler(sortearNovo, async () => ({ pares: 1 }), { onFailure: liberarChave(seen) });
+    const { engine } = await rodar("of-entrada", h);
+    const { cid, chave } = await novoCommand();
+    await engine.dispatch("sortearNovo", cid);
+    const r = await esperarFim(cid);
+    expect(r.status).toBe("failed");
+    expect(r.chave).toBe(`${chave}:erro:${cid}`);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.reason).toBe("invalid_input");
+    expect(seen[0]!.error).toBe(DEFAULT_ERROR);
+    expect(seen[0]!.command.prioridade).toBeUndefined();
+    expect(seen[0]!.command.chave).toBe(chave);
+    expect(Object.keys(seen[0]!.command).sort()).toEqual(["chave", "id", "rodada"]);
+  });
+
+  test("handler fails itself with failCommand in its own transact → hook not called", async () => {
+    const seen: FailureContext<typeof sortear>[] = [];
+    const h = defineHandler(
+      sortear,
+      async ({ db, command }) => {
+        await db.transact(failCommand(sortear, command.id, "own"));
+      },
+      { onFailure: liberarChave(seen) },
+    );
+    const { engine, events } = await rodar("of-proprio", h);
+    const { cid, chave } = await novoCommand();
+    await engine.dispatch("sortear", cid);
+    const r = await esperarFim(cid);
+    expect(r.status).toBe("failed");
+    expect(r.error).toBe("own");
+    expect(r.chave).toBe(chave);
+    await esperarEvento(events, cid, "run.failed");
+    expect(seen).toHaveLength(0);
+  });
+
+  test("hook that throws → failed with the original error, plus run.failed 'onFailure: …'", async () => {
+    const h = defineHandler(sortear, async () => fail("original"), {
+      onFailure: () => {
+        throw new Error("hook bug");
+      },
+    });
+    const { engine, events } = await rodar("of-lanca", h);
+    const { cid, chave } = await novoCommand();
+    await engine.dispatch("sortear", cid);
+    const r = await esperarFim(cid);
+    expect(r.status).toBe("failed");
+    expect(r.error).toBe("original");
+    expect(r.chave).toBe(chave);
+    await esperarAte(async () => events.some((e) => e.commandId === cid && e.error?.startsWith("onFailure: ")), 15_000);
+    const failed = events.filter((e) => e.commandId === cid && e.type === "run.failed");
+    expect(failed.map((e) => e.error)).toEqual(["original", "onFailure: hook bug"]);
+  });
+
+  test("done command → hook not called", async () => {
+    const seen: FailureContext<typeof sortear>[] = [];
+    const h = defineHandler(sortear, async () => ({ pares: 1 }), { onFailure: liberarChave(seen) });
+    const { engine, events } = await rodar("of-feito", h);
+    const { cid } = await novoCommand();
+    await engine.dispatch("sortear", cid);
+    const r = await esperarFim(cid);
+    expect(r.status).toBe("done");
+    await esperarEvento(events, cid, "run.done");
+    expect(seen).toHaveLength(0);
+  });
 });
