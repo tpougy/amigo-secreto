@@ -1,4 +1,5 @@
 import type { DataAttrDef } from "@instantdb/core";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { Command } from "./command";
 
 type Prettify<T> = { [K in keyof T]: T[K] } & {};
@@ -19,3 +20,23 @@ export type InputOf<C extends Command> = Prettify<
     [K in OptionalKeys<FieldsOf<C>>]?: ValueOf<FieldsOf<C>[K]> | undefined;
   } & { [N in LinkLabels<LinksOf<C>>]: string }
 >;
+
+type ResultSpecOf<C> = C extends { result: infer R } ? R : never;
+
+type OutputOfSpec<R, K extends "input" | "output"> = [R] extends [never]
+  ? null
+  : R extends DataAttrDef<infer V, any, any, any>
+    ? V
+    : R extends StandardSchemaV1
+      ? StandardSchemaV1.InferOutput<R> extends infer O
+        ? K extends "output"
+          ? O
+          : StandardSchemaV1.InferInput<R>
+        : never
+      : null;
+
+/** What the client receives: `T` of `i.json<T>()`, the Standard Schema output, or `null` without `result`. */
+export type ResultOf<C extends Command> = OutputOfSpec<ResultSpecOf<C>, "output">;
+
+/** What `complete` accepts: `T` of `i.json<T>()`, the Standard Schema input, or `null` without `result`. */
+export type ResultInputOf<C extends Command> = OutputOfSpec<ResultSpecOf<C>, "input">;
