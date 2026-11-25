@@ -1,64 +1,110 @@
-# Migrar o amigo-secreto para o `instant-commands`: considerações iniciais
+# Migrar o amigo-secreto para o `instant-commands`: plano revisado
 
-**Data:** 2026-11-25 · **Status:** ponto de partida para um design, nada decidido.
+**Data:** 2026-11-25 · **Status:** plano revisado depois do gancho `onFailure` (na `main` até `6a0c6f0`). Ainda não há spec da migração; o próximo passo é o design do piloto (reabertura).
 
 ## Onde estamos
 
-- A biblioteca `instant-commands` está na `main` (merge de `feat/instant-commands`, até `86b1830`), em `pacotes/instant-commands`. O amigo-secreto **não usa nada dela ainda**: o worker continua com a campainha própria (`worker/nucleo/campainha.ts`, `disparar.ts`).
-- Para ler antes de começar:
-  - **A biblioteca:** `pacotes/instant-commands/README.md` (API, modos de aviso, limitações) e a especificação `docs/superpowers/specs/2026-11-25-instant-commands-design.md` (a seção final lista os desvios feitos na implementação).
-  - **Pendências conhecidas:** o fim de `docs/superpowers/plans/2026-11-25-instant-commands.md`.
-  - **Webhook na VPS:** `docs/spikes/hairpin-webhook.md` (regra de nginx, e2e) e `docs/propostas/plataforma-workflows-webhook.md`.
-- A especificação deixou a migração fora de propósito ("Adoção no amigo-secreto (não decidida)"). Este documento levanta o que ela envolve.
+- A biblioteca `instant-commands` está na `main`, em `pacotes/instant-commands`, agora com `onFailure` (spec: `docs/superpowers/specs/2026-11-25-instant-commands-onfailure-design.md`). O amigo-secreto **ainda não usa nada dela**: o worker continua com a campainha própria (`worker/nucleo/campainha.ts`, `disparar.ts`).
+- Para ler antes de começar: o README da biblioteca (seção "How a command ends"), a spec principal (`docs/superpowers/specs/2026-11-25-instant-commands-design.md`, com os desvios no fim), as pendências no fim de `docs/superpowers/plans/2026-11-25-instant-commands.md` e, para o modo webhook, `docs/spikes/hairpin-webhook.md`.
 
 ## Os três pedidos que existem hoje
 
-| Pedido | Entidade | Campos de entrada | Status hoje | Erro | Link | Onde aparece |
+| Pedido | Entidade | Campos de entrada | Status hoje | Erro | Link | Reserva algo ao ser criado? |
 |---|---|---|---|---|---|---|
-| Sortear | `sorteios` | `rodada`, `chave` (única) | `pendente → processando → concluido \| erro` | `erro` | `grupo` (cascade) | worker `sortear.ts`, app (`PainelSorteio`, `consultas.ts`, `regras.ts`), MCP (`ferramentas.ts`), regras de outras entidades |
-| Reabrir grupo | `reaberturas` | — | `pendente → concluido \| erro` | `erro` | `grupo` (cascade) | worker `reabrirGrupo.ts`, app (`ConfiguracoesGrupo`), regras de `sorteios` |
-| Apagar conta | `pedidosExclusao` | — | `pendente → concluido` | não tem | `usuario` → `$users` (sem cascade) | worker `apagarConta.ts`, app (`conta/+page.svelte`) |
+| Sortear | `sorteios` | `rodada`, `chave` (única) | `pendente → processando → concluido \| erro` | `erro` | `grupo` (cascade) | **sim**: a `chave` `<grupoId>:<rodada>` |
+| Reabrir grupo | `reaberturas` | — | `pendente → concluido \| erro` | `erro` | `grupo` (cascade) | não |
+| Apagar conta | `pedidosExclusao` | — | `pendente → concluido` | não tem | `usuario` → `$users` (sem cascade) | não |
 
-Todos têm `criadoEm`; o sorteio também tem `concluidoEm`. Valores em português aparecem em 4 arquivos do app, 7 do worker, 5 de `pacotes/instant`, 3 do MCP e 1 de `scripts/`; `criadoEm` e `concluidoEm`, em cerca de 21 pontos fora dos testes.
+## A mudança de comportamento que atravessa tudo
 
-## O que não bate com a biblioteca
+Hoje, uma falha inesperada (passo que esgota as tentativas) deixa o pedido `pendente`, e a campainha abre outro run: o worker **insiste para sempre**. Com a biblioteca, a falha termina em `failed` com `defaultErrorMessage`, e **ninguém tenta de novo**. O `onFailure` resolve a parte do estado preso; a parte de "quem tenta de novo" fica com cada pedido:
 
-1. **Nomes.** A biblioteca gera `status` (`pending`/`running`/`done`/`failed`), `error`, `result`, `attempts`, `createdAt`, `finishedAt`. O amigo-secreto usa `status` (`pendente`/`processando`/`concluido`/`erro`), `erro`, `criadoEm`, `concluidoEm`, e não tem `attempts` nem `result`.
-2. **`processando` não é `running`.** No sorteio, `processando` é um passo de negócio: o worker marca o estado antes de calcular os pares (`marcar-processando` em `worker/workflows/sortear.ts`), e as regras e a tela usam isso para "sorteio em andamento". Na biblioteca, `running` é gravado pela própria checagem de status e também cobre a retomada depois de queda. Os significados são parecidos, mas não iguais.
-3. **Progresso em tempo real por `$streams`.** O sorteio publica progresso num stream (`worker/nucleo/progresso.ts`), com uma regra em `$streams` que olha `auth.ref('$user....sorteios.id')`. A biblioteca não sabe nada de streams; o handler teria de continuar fazendo isso por conta própria. É possível, já que o handler recebe o `db` de admin, mas precisa ser previsto.
-4. **Regras que cruzam pedidos.**
-   - A criação de um sorteio é negada se há reabertura pendente, e vice-versa.
-   - As `entradas` (participantes entrando) são negadas durante um sorteio `pendente`/`processando`.
-   - Essas expressões citam os valores de status em português. A biblioteca aceita CEL livre no `allow`, mas todos esses textos mudam junto com os nomes.
-5. **`pedidosExclusao` é diferente dos outros.** Não tem campo de erro, o link é com `$users` sem cascade, e o pedido sobrevive ao usuário apagado, como histórico. Com a biblioteca, o link continua sem `onDelete`. Falta decidir se o registro deve continuar existindo depois que a conta some, porque a biblioteca não escreve em command apagado. Hoje o worker apaga o usuário e depois marca `concluido`, e a ordem importa.
-6. **Regras novas que a biblioteca gera.** Ela gera `create` com `data.attempts == 0` e `error`/`result`/`finishedAt` nulos, `update: false`, e link só na criação. O app e o MCP teriam de criar os pedidos com `sendCommand`, ou pelo menos gravar os mesmos campos.
-7. **MCP.** O `mcp/ferramentas.ts` lê o status dos sorteios para "sorteio em andamento". Ele também precisa migrar.
+| Pedido | Quem vê a falha | Precisa de `onFailure`? | Quem tenta de novo |
+|---|---|---|---|
+| Sortear | o organizador, na tela | **sim**: renomear a `chave` | o organizador, clicando de novo (a chave liberada permite) |
+| Reabrir | o organizador, na tela | não | o organizador, clicando de novo |
+| Apagar conta | **ninguém**: a tela sai da sessão logo depois de criar o pedido | não | **ninguém** — ver "Exclusão de conta" abaixo |
 
-## Decisões em aberto
+Em todos: passar `defaultErrorMessage` em português no `defineHandler` (o padrão da biblioteca é inglês) e manter a política longa de hoje nos passos (`retryPolicy` = `RETRY_PASSO_PADRAO`, 300 tentativas, ~5 h), para que `failed` só aconteça depois de horas de Instant fora do ar ou de um bug.
 
-1. **Nomes: migrar os dados ou deixar a biblioteca configurável?**
-   - **(a) Migrar o app para os nomes da biblioteca.** É preciso um script admin que reescreva os registros existentes, mudar as regras, o app, o MCP e o worker de uma vez, e fazer push do schema com os campos novos antes de apagar os antigos. É o caminho mais limpo; o custo é uma janela de corte com usuários reais.
-   - **(b) Dar à biblioteca nomes de campo e de status configuráveis** por command, por exemplo `statusValues: { pending: "pendente", ... }` e `fields: { error: "erro", createdAt: "criadoEm" }`. Não há migração de dados, mas a biblioteca fica mais complexa, e os tipos gerados precisam acompanhar a configuração.
-   - **(c) Começar só com os pedidos novos** que surgirem e deixar os três atuais como estão.
-2. **Ordem.** Um pedido por vez, começando pela **reabertura**: não tem campos de entrada nem stream, e o fluxo é o mais simples. Depois a exclusão de conta. Por último o sorteio, que tem `processando`, streams e mais regras cruzadas.
-3. **Modo de aviso.**
-   - Começar em `subscription`, que é o mesmo comportamento de hoje, sem mexer na infra.
-   - O `webhook` vem num segundo passo. Ele exige `amigo-worker` com processo `web`, `proxy:enable`, o domínio `amigo-worker.app.tpou.gy`, Let's Encrypt, `WEBHOOK_URL` e a regra de nginx `allow 172.17.0.0/16; deny all;`. O e2e já provou isso num app descartável.
-4. **`processando`.** Duas saídas: virar um campo de negócio separado (por exemplo `fase: "calculando"`), ou as regras passarem a olhar o `running` da biblioteca, aceitando que ele também cobre a retomada.
-5. **Convivência durante a transição.** O worker roda os dois mundos ao mesmo tempo: a campainha antiga para os pedidos ainda não migrados e o `createRunner` para os migrados. Eles usam o mesmo `ow.db` e precisam de nomes de workflow diferentes, ou do mesmo nome com `version` nova. Lembrete da plataforma: um run de uma versão que nenhum worker registra fica na fila para sempre.
-6. **Registros históricos.** Converter todos ou só os `pendente`? E o que fazer com sorteios antigos `concluido`, que as telas mostram?
+## Decisões tomadas
+
+1. **Nomes: adotar os da biblioteca (opção a).** Configurar a biblioteca (b) deixaria genéricos complexos para sempre por um único consumidor; começar só com pedidos novos (c) manteria dois sistemas.
+
+   | Hoje | Biblioteca |
+   |---|---|
+   | `pendente` / `processando` / `concluido` / `erro` | `pending` / `running` / `done` / `failed` |
+   | `erro` (campo) | `error` |
+   | `criadoEm` / `concluidoEm` | `createdAt` / `finishedAt` |
+   | — | `attempts`, `result` |
+
+   **Não há dados a converter.** Consulta de produção em 2026-11-25: 4 grupos, todos `aberto`, nenhum sorteado; `sorteios`, `reaberturas` e `pedidosExclusao` vazios (o `e2e-producao` limpa o que cria). O histórico de runs do OpenWorkflow (`/data/ow.db`) pode ser abandonado: os nomes de workflow novos o ignoram e o `limparHistorico` o apaga em 30 dias. O `ow.db` em si fica, porque guarda os agendamentos. Os atributos antigos saem no mesmo push de schema. Os baldes de rate limit mudam de nome (`sorteio` → `sorteios`), e os contadores zeram.
+
+2. **`processando` vira `running`.** O `ic:check` grava `running` antes do handler, e todas as regras e telas usam `pendente || processando` no sentido de "aberto" = `pending || running`. O passo `marcar-processando` sai; a fase fina continua no stream. Sem campo `fase`.
+
+3. **Modo `subscription` primeiro.** O webhook vem depois dos três pedidos migrados.
+
+4. **Um corte só, para os três pedidos.** Sem dados a converter, migrar um pedido por vez só traria custo: a convivência dos dois mundos no worker e estados intermediários nas regras cruzadas. O desenvolvimento segue a ordem reabertura → exclusão de conta → sorteio numa branch, e a produção recebe tudo num deploy. `campainha.ts` e `disparar.ts` saem de uma vez.
+
+## Como cada pedido fica
+
+### Reabertura
+
+- `defineCommand({ name: "reabertura", entity: "reaberturas", fields: {}, links: { grupo, cascade }, bind/allow das regras atuais, rateLimit })`.
+- Handler: os passos atuais (`carregar`, `reabrir`), trocando as escritas de status por `command.complete({ pares })` na transação do `reabrir` e `ic.fail(MSG_…)` nos erros de negócio. As irmãs pendentes continuam com `failCommand` na mesma transação.
+- **Armadilha:** `motivoErro` e o filtro de `irmas` passam a olhar `pending || running`, e não só `pendente`. E a regra `sorteios.semReaberturaPendente` também: hoje a reabertura vai direto de `pendente` para `concluido`; na biblioteca ela passa por `running`, e uma regra que olhe só `pending` liberaria um sorteio durante a reabertura.
+
+### Exclusão de conta
+
+- `defineCommand({ name: "exclusao-conta", entity: "pedidosExclusao", links: { usuario → $users, sem onDelete }, allow: { create/view: dono, delete: "false" } })`.
+- Handler: `limpar-dados` → `apagar-usuario`, cada um num passo, e retorna. A biblioteca grava `done` depois (o pedido sobrevive ao usuário porque não há cascade). A ordem atual fica preservada.
+- **Ponto novo, e o mais sério da revisão:** a pessoa sai da sessão assim que o pedido é registrado e nunca vê o status. Se o run terminar em `failed`, ela acha que a conta foi apagada e não foi. Isso é dado pessoal que deveria ter sido apagado. O `onFailure` não ajuda aqui, porque não há reserva a liberar. Proposta:
+  - um `defineSchedule` diário, `reprocessar-exclusoes`, que procura pedidos `failed` cujo `$users` ainda existe e cria um pedido novo como admin, ligado ao mesmo usuário (o handler é idempotente: `limparDados` lê o estado atual);
+  - e um log de alerta no `onEvent` para `run.failed` de `exclusao-conta`, para alguém olhar se repetir.
+- **A verificar no app de teste:** `mergePerms` gera `link`/`unlink: "true"` no lado reverso, em `$users`. O servidor já recusa regra de `delete` em `$users`; não sei se aceita de link.
+
+### Sorteio
+
+- `defineCommand({ name: "sorteio", entity: "sorteios", fields: { rodada: i.number(), chave: i.string().unique() }, ... })`, com as regras atuais (`rodadaValida`, `chaveCerta`, `grupoNaoEncerrado`, `semReaberturaPendente` = sem reabertura `pending || running`).
+- Handler: `carregar` → `sortear` → `gravar-pares`. `gravar-pares` continua relendo o estado e grava pares, grupo e `command.complete({ pares })` numa transação só.
+- **Erros de negócio** (rodada inválida, participantes mudaram, grupo encerrado, `ErroSorteio`): só `ic.fail(MSG_…)`. `marcarErro` some.
+- **A `chave`:** `onFailure: liberarChave`, cobrindo também as falhas inesperadas:
+  ```ts
+  function liberarChave({ db, command }: FailureContext<typeof sorteio, AppSchema>) {
+    if (typeof command.chave !== "string") return [];
+    return [db.tx.sorteios[command.id].update({ chave: `${command.chave}:erro:${command.id}` })];
+  }
+  ```
+  O formato é o mesmo de hoje, então os sorteios antigos em `erro` já convertidos continuam coerentes.
+- **Stream:** as fases `embaralhando`, `sorteando` e `pronto` continuam dentro dos passos (`escreverFase(db, streamDoSorteio(command.id), …)`). A fase `erro` vai para o `onEvent` (`run.failed` com `command === "sorteio"`), em melhor esforço; a tela já usa o `status` quando o stream não fecha. Filtrar os eventos extras que começam com `onFailure`, para não fechar o stream duas vezes.
+- **Grupo apagado durante o sorteio:** a cascata apaga o sorteio; a biblioteca não grava nada num command apagado e não chama o gancho. Mesma proteção contra fantasmas que `estadoAtual` dá hoje.
+- Regras de outras entidades que mudam junto: `participantes.semSorteioEmAndamento` e `reaberturas.semSorteioEmAndamento` passam a olhar `pending || running`. Sugestão: um utilitário em `perms.ts`, `emAberto(ref)`, para não espalhar o texto CEL.
+
+## O worker depois do corte
+
+Fatos verificados no código, que continuam valendo mesmo sem convivência:
+
+- A deduplicação do OpenWorkflow é por `(workflow_name, idempotency_key)`, **sem a versão**. Os commands usam nomes de workflow novos (`reabertura`, `exclusao-conta`, `sorteio`), nunca `reabrir-grupo` etc. com outra versão.
+- `runner.start()` cria o worker do OpenWorkflow sobre todos os workflows registrados no `ow`. Os workflows agendados que continuam (`limparHistorico`, `estatisticas`) são registrados no mesmo `ow` **antes** de `runner.start()`, e o `ow.newWorker` do `main.ts` sai.
+
+## O corte
+
+1. Backup do Postgres (runbook da VPS).
+2. Parar o worker e confirmar que `sorteios`, `reaberturas` e `pedidosExclusao` continuam vazios. Se aparecer algum registro (um sorteio real no "Amigo Livro Permutações", por exemplo), convertê-lo na mão antes de seguir.
+3. Push do schema e das regras, com `pacotes/instant/testes/permissoes.*` atualizados e passando no app de teste antes.
+4. Deploy do worker, do app e do MCP.
+5. Subir o worker e rodar `scripts/e2e-producao.ts` (atualizado para `sendCommand`).
+
+Rollback: reimplantar código, schema e regras antigas. Os pedidos criados depois do corte se perdem nesse caso, aceitável enquanto não houver uso real.
 
 ## Riscos
 
-- **Usuários reais.** O site está com amigos usando. Precisa de uma janela, de backup do Postgres antes (runbook da VPS) e de um rollback testado.
-- **Regras.** Um texto CEL errado nas regras cruzadas pode liberar um sorteio durante uma reabertura. Os testes de `pacotes/instant/testes/permissoes.*` precisam ser atualizados e passar contra o app de teste antes do push em produção.
-- **Testes de `pacotes/instant` dependem de dados globais do app de teste.** O `debugQuery` avalia todos os `pares` do app. Uma execução interrompida deixa restos que quebram `permissoes.conta.test.ts` ("A vê pares": 7 checagens em vez de 3). Aconteceu hoje e foi resolvido apagando o prefixo que sobrou.
-- **Pendências da biblioteca que pesam na migração** (lista completa no plano):
-  - `null` de um campo `json` obrigatório chega como `undefined` ao handler;
-  - um caso raro no limite de 1000 steps (Instant fora do ar no mesmo instante);
-  - `waitForCommand` só rejeita no timeout quando a assinatura falha.
-- **TypeScript.** Com o TS 6.0.3 e o `@instantdb/core` 1.0.67, os valores de atributo das consultas saem como `any`, e isso afeta o app e o worker também. A biblioteca fixou o TS 5.9.3 para os próprios testes.
+- **Usuários reais:** janela curta, backup antes, rollback testado.
+- **Regras cruzadas:** um CEL errado pode liberar um sorteio durante uma reabertura. Os testes de permissão cobrem os dois sentidos antes do push.
+- **Testes de `pacotes/instant` dependem de dados globais do app de teste** (`permissoes.conta.test.ts` quebra com restos de execuções interrompidas).
+- **Pendências da biblioteca** ainda abertas no plano original: o caso raro no limite de 1000 steps com o Instant fora do ar, e `waitForCommand` só rejeitando no timeout quando a assinatura falha. E a residual do `onFailure`: extras que causem erro não-4xx de forma determinística fazem o handler rodar de novo (no sorteio, a única escrita extra é a renomeação da própria chave, então o risco é baixo).
+- **TypeScript 6.0.3 com `@instantdb/core` 1.0.67:** valores de atributo saem como `any` no app e no worker.
 
-## Sugestão de primeiro passo no novo chat
+## Próximo passo
 
-Fazer o design da migração da **reabertura** sozinha, em modo `subscription`. Para isso, decidir antes o item 1, nomes: (a) migrar os dados ou (b) configurar a biblioteca. A reabertura serve de piloto para a decisão de nomes e para a convivência dos dois mundos no mesmo worker, com pouco risco.
+Design da migração completa (os três pedidos, corte único, modo `subscription`), com o reprocessamento das exclusões falhas aprovado.
