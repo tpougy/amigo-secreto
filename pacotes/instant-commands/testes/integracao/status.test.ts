@@ -56,7 +56,7 @@ describe("status writes", () => {
 
     const b = await novoCommand();
     await markRunning(admin, sortear, b);
-    expect(await markFailed(admin, sortear, b, "boom")).toBe(true);
+    expect((await markFailed(admin, sortear, b, "boom")).written).toBe(true);
     expect(await markRunning(admin, sortear, b)).toBe("finished");
     const rb = await ler(b);
     expect(rb?.status).toBe("failed");
@@ -74,7 +74,7 @@ describe("status writes", () => {
   test("markFailed on a deleted command writes nothing (no ghost)", async () => {
     const cid = await novoCommand();
     await admin.transact(admin.tx.sorteios[cid]!.delete());
-    expect(await markFailed(admin, sortear, cid, "boom")).toBe(false);
+    expect((await markFailed(admin, sortear, cid, "boom")).written).toBe(false);
     expect(await ler(cid)).toBeUndefined();
   });
 
@@ -89,7 +89,7 @@ describe("status writes", () => {
     const cid = await novoCommand();
     await markRunning(admin, sortear, cid);
     await markDone(admin, sortear, cid, { pares: 2 });
-    expect(await markFailed(admin, sortear, cid, "boom")).toBe(false);
+    expect((await markFailed(admin, sortear, cid, "boom")).written).toBe(false);
     const r = await ler(cid);
     expect(r?.status).toBe("done");
     expect(r?.result).toEqual({ pares: 2 });
@@ -105,5 +105,44 @@ describe("status writes", () => {
     expect(r?.status).toBe("failed");
     expect(r?.error).toBe("boom");
     expect(r?.result ?? null).toBeNull();
+  });
+
+  test("markFailed with extras frees a unique field in the same write", async () => {
+    const chave = `${PREFIXO}-X`;
+    const org = await novoUsuario(PREFIXO);
+    const grupoId = await criarGrupo(PREFIXO, org);
+    const cid = await sendCommand(org.db, sortear, { rodada: 1, chave, grupo: grupoId });
+    await markRunning(admin, sortear, cid);
+    const res = await markFailed(admin, sortear, cid, "m", async (r) => [
+      admin.tx.sorteios[cid]!.update({ chave: `${r.chave}:erro:${cid}` }),
+    ]);
+    expect(res).toEqual({ written: true });
+    const r = await ler(cid);
+    expect(r?.status).toBe("failed");
+    expect(r?.error).toBe("m");
+    expect(r?.chave).toBe(`${chave}:erro:${cid}`);
+
+    const org2 = await novoUsuario(PREFIXO);
+    const grupo2 = await criarGrupo(PREFIXO, org2);
+    const outro = await sendCommand(org2.db, sortear, { rodada: 1, chave, grupo: grupo2 });
+    expect((await ler(outro))?.chave).toBe(chave);
+  });
+
+  test("markFailed with a rejected extra (unique clash) → failed, field untouched", async () => {
+    const chaveA = `${PREFIXO}-A-${crypto.randomUUID()}`;
+    const chaveB = `${PREFIXO}-B-${crypto.randomUUID()}`;
+    const org = await novoUsuario(PREFIXO);
+    const grupoId = await criarGrupo(PREFIXO, org);
+    const a = await sendCommand(org.db, sortear, { rodada: 1, chave: chaveA, grupo: grupoId });
+    const org2 = await novoUsuario(PREFIXO);
+    const grupo2 = await criarGrupo(PREFIXO, org2);
+    await sendCommand(org2.db, sortear, { rodada: 1, chave: chaveB, grupo: grupo2 });
+    await markRunning(admin, sortear, a);
+    const res = await markFailed(admin, sortear, a, "m", async () => [admin.tx.sorteios[a]!.update({ chave: chaveB })]);
+    expect(res.written).toBe(true);
+    expect(res.extrasError?.startsWith("onFailure rejected: ")).toBe(true);
+    const r = await ler(a);
+    expect(r?.status).toBe("failed");
+    expect(r?.chave).toBe(chaveA);
   });
 });
