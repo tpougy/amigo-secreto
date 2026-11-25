@@ -9,8 +9,8 @@ type ValueOf<A> = A extends DataAttrDef<infer V, any, any, any> ? V : never;
 type RequiredKeys<F> = { [K in keyof F]: F[K] extends DataAttrDef<any, true, any, any> ? K : never }[keyof F];
 type OptionalKeys<F> = Exclude<keyof F, RequiredKeys<F>>;
 
-type FieldsOf<C> = C extends { fields: infer F } ? F : {};
-type LinksOf<C> = C extends { links: infer L } ? L : {};
+export type FieldsOf<C> = C extends { fields: infer F } ? F : {};
+export type LinksOf<C> = C extends { links: infer L } ? L : {};
 
 type LinkLabels<L> = { [K in keyof L]: L[K] extends { forward: { label: infer N extends string } } ? N : never }[keyof L];
 
