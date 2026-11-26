@@ -8,7 +8,7 @@ Em produção: front em https://amigo.tpou.gy (Worker `amigo-secreto`; reserva h
 
 ```
 app/      front (SvelteKit SPA)            pacotes/  código compartilhado (dominio, instant)
-worker/   worker Bun (OpenWorkflow)        infra/    provisionamento e deploy
+worker/   worker Bun (instant-commands)   infra/    provisionamento e deploy
 mcp/      servidor MCP (Google)            scripts/  ferramentas do dia a dia
                                            docs/     documentação, specs e achados
 ```

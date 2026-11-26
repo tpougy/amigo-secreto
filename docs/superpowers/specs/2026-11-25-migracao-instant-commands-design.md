@@ -1,6 +1,6 @@
 # Migração do amigo-secreto para o `instant-commands` (design)
 
-**Data:** 2026-11-25 · **Status:** aguardando aprovação (builder check feito; decisões marcadas como "Decisão minha"). Origem: [`docs/ideias/migracao-instant-commands.md`](../../ideias/migracao-instant-commands.md) (análise, decisões e riscos). Biblioteca: `pacotes/instant-commands` (README; specs [`2026-11-25-instant-commands-design.md`](2026-11-25-instant-commands-design.md) e [`2026-11-25-instant-commands-onfailure-design.md`](2026-11-25-instant-commands-onfailure-design.md)).
+**Data:** 2026-11-25 · **Status:** implementado na branch `feat/migracao-instant-commands`; corte em produção pendente (roteiro: [`docs/runbooks/corte-instant-commands.md`](../../runbooks/corte-instant-commands.md)). Antes: aprovação (builder check feito; decisões marcadas como "Decisão minha"). Origem: [`docs/ideias/migracao-instant-commands.md`](../../ideias/migracao-instant-commands.md) (análise, decisões e riscos). Biblioteca: `pacotes/instant-commands` (README; specs [`2026-11-25-instant-commands-design.md`](2026-11-25-instant-commands-design.md) e [`2026-11-25-instant-commands-onfailure-design.md`](2026-11-25-instant-commands-onfailure-design.md)).
 
 ## Intenção
 
@@ -204,3 +204,18 @@ Rollback: reimplantar o commit anterior de código, schema e regras. Pedidos cri
 - Se a CLI do Instant remove os atributos antigos (`criadoEm`, `erro`, `concluidoEm`) no push ou se eles ficam órfãos; qualquer das duas serve, já que não há dados.
 - Se `sendCommand` aceita o `db` do admin para o reprocessamento (ele só usa `transact`); senão, escrever o pedido com `admin.tx` e os mesmos campos padrão.
 - Organização interna dos handlers (quanto do código de `workflows/` mover ou reaproveitar).
+
+## Status da implementação e desvios
+
+Implementado na branch `feat/migracao-instant-commands` (Tasks 1 a 9). O corte em produção **não foi feito**; o roteiro está em [`docs/runbooks/corte-instant-commands.md`](../../runbooks/corte-instant-commands.md).
+
+- **Regras de `$users`:** o app de teste aceitou as regras de link geradas para `pedidosExclusao`; o plano B da spec (remover essas regras em `perms.ts`) não foi necessário.
+- **`emAberto`** mora em `pacotes/instant/commands.ts` e é reexportado por `perms.ts` (evita ciclo de import). `zod` virou dependência de `@amigo/instant`.
+- **`sendCommand`** funciona com o `db` do admin e com os de `asUser`; no app Svelte recebe `db.core`.
+- **Handlers são fábricas:** `criarSorteioHandler({ segredo, retryPolicy? })`, `criarReaberturaHandler(opcoes?)`, `criarExclusaoContaHandler(opcoes?)`. O schedule `reprocessarExclusoes` expõe um `reprocessar(db)` testável.
+- **`aoFalharSorteio(db, commandId)`** é síncrono, de melhor esforço (a spec o previa assíncrono com `catch` próprio).
+- **Log de eventos:** `worker/nucleo/logEvento.ts` (`camposDoEvento`) registra `error` só em `command.failed`; os demais eventos registram só `erroClasse` (privacidade, contrato de `nucleo/log.ts`).
+- **`duracaoMs`** saiu do log de `sorteio.concluido` (o contexto do handler não tem `run.startedAt`).
+- **Testes do worker:** os antigos foram apagados e a cobertura portada para os testes dos handlers (apagar pares da rodada 2, grupo encerrado, `liberarChave`, restrição de participante removido, detalhes da exclusão de conta: respostas, `removidoNaRodada`, arquivo de capa, pares mantidos, idempotência, `deleteUser` falhando → `failed`; tabela de `rodadaValida`). `entradas.test.ts` e `campainha.test.ts` foram descartados por obsoletos (a biblioteca cobre despacho e validação de entrada).
+- **Raiz:** `package.json` ganhou `instant-commands` em `devDependencies` (para `scripts/e2e-producao.ts`).
+- **Dockerfiles** do worker e do MCP copiam `pacotes/instant-commands` e `pacotes/instant/commands.ts` e instalam com `--filter instant-commands`. **Os builds das imagens não foram verificados** (sem daemon do Docker); o primeiro passo do corte é construí-las.
