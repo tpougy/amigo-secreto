@@ -6,8 +6,8 @@ import { OpenWorkflow } from "openworkflow";
 import { BackendSqlite } from "openworkflow/sqlite";
 import schema from "@amigo/instant";
 import { log } from "./nucleo/log";
+import { camposDoEvento } from "./nucleo/logEvento";
 import { validarSegredo } from "./nucleo/seed";
-import type { RunnerEvent } from "instant-commands/worker";
 import { createRunner } from "./commands";
 import { criarExclusaoContaHandler } from "./handlers/exclusaoConta";
 import { criarReaberturaHandler } from "./handlers/reabertura";
@@ -41,16 +41,6 @@ const db = init({
   apiURI: exigir("INSTANT_API_URI"),
   schema,
 });
-/** Campos escalares do evento (descarta undefined e listas), no formato do `log`. */
-function logavel(e: RunnerEvent): Record<string, string | number | boolean> {
-  const out: Record<string, string | number | boolean> = {};
-  for (const [k, v] of Object.entries(e)) {
-    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") out[k] = v;
-    else if (Array.isArray(v)) out[k] = v.join(",");
-  }
-  return out;
-}
-
 const concorrencia = Number(process.env.OW_CONCORRENCIA ?? "2") || 2;
 
 const owDb = process.env.OW_DB ?? "/data/ow.db";
@@ -68,14 +58,14 @@ const runner = createRunner({
   trigger: { type: "subscription" },
   concurrency: concorrencia,
   onEvent: (e) => {
-    log(`ic.${e.type}`, logavel(e));
+    log(`ic.${e.type}`, camposDoEvento(e));
     if (e.type !== "command.failed") return;
     if (e.command === "sorteio" && e.commandId) {
       // Fase `erro` no stream de progresso. Best effort: nunca lança.
       try {
         aoFalharSorteio(db, e.commandId);
       } catch (err) {
-        log("sorteio.stream_erro_falhou", { sorteioId: e.commandId, motivo: (err as Error).message });
+        log("sorteio.stream_erro_falhou", { sorteioId: e.commandId, motivo: (err as Error).name });
       }
     } else if (e.command === "exclusao-conta") {
       log("exclusao.falhou", { pedidoId: e.commandId ?? "" });

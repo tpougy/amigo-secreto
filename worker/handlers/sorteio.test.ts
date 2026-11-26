@@ -30,6 +30,7 @@ import {
   MSG_PADRAO_SORTEIO,
   MSG_PARTICIPANTES_MUDARAM,
   MSG_RODADA_INVALIDA,
+  rodadaValida,
   streamDoSorteio,
   type Carga,
 } from "./sorteio";
@@ -274,6 +275,18 @@ describe("sorteio: mudanças durante o run", () => {
   });
 });
 
+describe("rodadaValida: limite de rodadas por abertura", () => {
+  test("rodadaBase ausente vale 0", () => {
+    expect(rodadaValida(1, 0, undefined)).toBe(true);
+    expect(rodadaValida(3, 2, undefined)).toBe(true);
+    expect(rodadaValida(4, 3, undefined)).toBe(false);
+    expect(rodadaValida(4, 3, null)).toBe(false);
+    expect(rodadaValida(4, 3, 1)).toBe(true);
+    expect(rodadaValida(5, 4, 1)).toBe(false);
+    expect(rodadaValida(3, 1, 1)).toBe(false); // fora de sequência
+  });
+});
+
 describe("liberarChave", () => {
   test("renomeia a chave; sem chave string, nada", () => {
     const sid = id();
@@ -379,6 +392,18 @@ describe("handler sorteio", () => {
     expect(fim.result).toEqual({ pares: 4 });
     const pares = await paresDoGrupo(g.grupoId);
     expect(pares.some((p) => (p.doador!.id === b && p.receptor!.id === c) || (p.doador!.id === c && p.receptor!.id === b))).toBe(false);
+  });
+
+  test("rodada 4 sem rodadaBase (rodadaAtual 3) → failed com MSG_RODADA_INVALIDA", async () => {
+    const g = await grupoCom(3);
+    await admin.transact(admin.tx.grupos[g.grupoId]!.update({ status: "sorteado", rodadaAtual: 3 }));
+    // A regra recusa o organizador: o pedido sai pelo admin.
+    const sid = await sendCommand(admin, sorteio, { rodada: 4, chave: `${g.grupoId}:4`, grupo: g.grupoId });
+    meusStreams.push(streamDoSorteio(sid));
+    const fim = await waitForCommand(admin, sorteio, sid, ESPERA);
+    expect(fim.status).toBe("failed");
+    expect(fim.error).toBe(MSG_RODADA_INVALIDA);
+    expect((await lerGrupo(g.grupoId))!.rodadaAtual).toBe(3);
   });
 
   test("rodada inválida → failed com MSG_RODADA_INVALIDA", async () => {
