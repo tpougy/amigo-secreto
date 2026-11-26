@@ -142,7 +142,7 @@ describe("depois do sorteio", () => {
     const sorteioId = id();
     await admin.transact(
       admin.tx.sorteios[sorteioId]!
-        .create({ status: "processando", rodada: 1, chave: `${grupoId}:1`, criadoEm: Date.now() })
+        .create({ status: "running", rodada: 1, chave: `${grupoId}:1`, attempts: 0, createdAt: Date.now() })
         .link({ grupo: grupoId }),
     );
     await simularWorker(
@@ -198,17 +198,17 @@ describe("depois do sorteio", () => {
     expect(participantes[0]!.viuParNaRodada).toBe(1);
   });
 
-  test("com a rodada 2 pendente/processando: aviso de refazendo, sem par e sem marcar viuParNaRodada", async () => {
+  test("com a rodada 2 pending/running: aviso de refazendo, sem par e sem marcar viuParNaRodada", async () => {
     const sorteio2 = id();
     await admin.transact(
       admin.tx.sorteios[sorteio2]!
-        .create({ status: "pendente", rodada: 2, chave: `${grupoId}:2`, criadoEm: Date.now() })
+        .create({ status: "pending", rodada: 2, chave: `${grupoId}:2`, attempts: 0, createdAt: Date.now() })
         .link({ grupo: grupoId }),
     );
     // B "ainda não viu": a chamada durante o refazer não pode marcar.
     await admin.transact(admin.tx.participantes[part.B!]!.update({ viuParNaRodada: null }));
     try {
-      for (const status of ["pendente", "processando"]) {
+      for (const status of ["pending", "running"]) {
         await admin.transact(admin.tx.sorteios[sorteio2]!.update({ status }));
         expect(await meuAmigoSecreto(B.db, codigo)).toEqual({
           aviso: "O sorteio está sendo refeito. Tente de novo em instantes.",
@@ -242,11 +242,11 @@ describe("depois de reabrir o grupo", () => {
     const sorteio2 = id();
     await admin.transact(
       admin.tx.sorteios[sorteio2]!
-        .create({ status: "pendente", rodada: 2, chave: `${grupoId}:2`, criadoEm: Date.now() })
+        .create({ status: "pending", rodada: 2, chave: `${grupoId}:2`, attempts: 0, createdAt: Date.now() })
         .link({ grupo: grupoId }),
     );
     try {
-      for (const status of ["pendente", "processando"]) {
+      for (const status of ["pending", "running"]) {
         await admin.transact(admin.tx.sorteios[sorteio2]!.update({ status }));
         expect(await meuAmigoSecreto(A.db, codigo)).toEqual({ aviso: "O sorteio ainda não aconteceu" });
       }

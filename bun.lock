@@ -11,6 +11,7 @@
         "@amigo/dominio": "workspace:*",
         "@amigo/instant": "workspace:*",
         "@instantdb/admin": "1.0.67",
+        "instant-commands": "workspace:*",
       },
     },
     "app": {

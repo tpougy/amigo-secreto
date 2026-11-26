@@ -19,6 +19,7 @@
   "devDependencies": {
     "@amigo/dominio": "workspace:*",
     "@amigo/instant": "workspace:*",
+    "instant-commands": "workspace:*",
     "@instantdb/admin": "1.0.67"
   }
 }
