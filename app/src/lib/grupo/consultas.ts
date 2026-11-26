@@ -56,15 +56,15 @@ export type SorteioBruto = {
   id: string;
   status: string;
   rodada: number;
-  erro?: string | null;
-  criadoEm: string | number;
-  concluidoEm?: string | number | null;
+  error?: string | null;
+  createdAt: string | number;
+  finishedAt?: string | number | null;
 };
 
 export type EstadoPainel =
   /** Nenhum sorteio concluído e nada em andamento nem com erro. */
   | { tipo: "nunca" }
-  /** Pedido `pendente` ou `processando`. */
+  /** Pedido `pending` ou `running`. */
   | { tipo: "andamento"; sorteio: SorteioBruto }
   /** O último pedido (rodada ainda não concluída) falhou. */
   | { tipo: "erro"; sorteio: SorteioBruto; concluido: SorteioBruto | null }
@@ -75,19 +75,19 @@ const ms = (d: string | number | null | undefined) => (d == null ? 0 : new Date(
 
 /** O pedido mais recente (por criação). */
 export function ultimoSorteio(sorteios: SorteioBruto[]): SorteioBruto | null {
-  return [...sorteios].sort((a, b) => ms(b.criadoEm) - ms(a.criadoEm))[0] ?? null;
+  return [...sorteios].sort((a, b) => ms(b.createdAt) - ms(a.createdAt))[0] ?? null;
 }
 
 /** O sorteio concluído da rodada atual (o que vale agora). */
 export function sorteioVigente(sorteios: SorteioBruto[], rodadaAtual: number): SorteioBruto | null {
   if (rodadaAtual < 1) return null;
-  return sorteios.find((s) => s.status === "concluido" && s.rodada === rodadaAtual) ?? null;
+  return sorteios.find((s) => s.status === "done" && s.rodada === rodadaAtual) ?? null;
 }
 
 /**
  * Estado do painel do organizador. Depois de reabrir (`rodadaAtual == rodadaBase`), os pares foram
  * apagados: o sorteio concluído da rodada atual não vale mais e o painel volta a "nunca". Um pedido
- * com `erro` criado antes da última reabertura concluída (`reabertoEm`) também não interessa mais.
+ * com `failed` criado antes da última reabertura concluída (`reabertoEm`) também não interessa mais.
  */
 export function estadoPainel(
   rodadaAtual: number,
@@ -98,10 +98,10 @@ export function estadoPainel(
   const ultimo = ultimoSorteio(sorteios);
   const sorteouNestaAbertura = rodadaAtual > (rodadaBase ?? 0);
   const vigente = sorteouNestaAbertura ? sorteioVigente(sorteios, rodadaAtual) : null;
-  if (ultimo && (ultimo.status === "pendente" || ultimo.status === "processando")) {
+  if (ultimo && (ultimo.status === "pending" || ultimo.status === "running")) {
     return { tipo: "andamento", sorteio: ultimo };
   }
-  if (ultimo && ultimo.status === "erro" && ultimo.rodada > rodadaAtual && ms(ultimo.criadoEm) >= ms(reabertoEm)) {
+  if (ultimo && ultimo.status === "failed" && ultimo.rodada > rodadaAtual && ms(ultimo.createdAt) >= ms(reabertoEm)) {
     return { tipo: "erro", sorteio: ultimo, concluido: vigente };
   }
   if (sorteouNestaAbertura) return { tipo: "concluido", sorteio: vigente };
@@ -111,7 +111,7 @@ export function estadoPainel(
 /** Há um pedido de sorteio em andamento (a página avisa que o par pode mudar). */
 export function emAndamento(sorteios: SorteioBruto[]): boolean {
   const u = ultimoSorteio(sorteios);
-  return !!u && (u.status === "pendente" || u.status === "processando");
+  return !!u && (u.status === "pending" || u.status === "running");
 }
 
 export type RespostaBruta = { valor: unknown; campo?: { id: string } | null };
@@ -140,17 +140,17 @@ export function dataBr(d: string | number | null | undefined): string | null {
 /** `Date`/ISO do Instant → `YYYY-MM-DD` (para `<input type="date">`), no fuso de São Paulo. */
 export const paraInputData = (d: string | number | null | undefined): string => isoParaDia(d);
 
-export type ReaberturaBruta = { id: string; status: string; erro?: string | null; criadoEm: string | number };
+export type ReaberturaBruta = { id: string; status: string; error?: string | null; createdAt: string | number };
 
 /** Quando foi pedida a última reabertura concluída (`null` se o grupo nunca foi reaberto). */
 export function reabertoEm(reaberturas: ReaberturaBruta[]): string | number | null {
-  const concluidas = reaberturas.filter((r) => r.status === "concluido");
-  return concluidas.sort((a, b) => ms(b.criadoEm) - ms(a.criadoEm))[0]?.criadoEm ?? null;
+  const concluidas = reaberturas.filter((r) => r.status === "done");
+  return concluidas.sort((a, b) => ms(b.createdAt) - ms(a.createdAt))[0]?.createdAt ?? null;
 }
 
-/** Há um pedido de reabertura esperando o worker (Sortear, Refazer e Reabrir ficam desabilitados). */
+/** Há um pedido de reabertura esperando o worker ou em execução (Sortear, Refazer e Reabrir ficam desabilitados). */
 export function reabrindo(reaberturas: ReaberturaBruta[]): boolean {
-  return reaberturas.some((r) => r.status === "pendente");
+  return reaberturas.some((r) => r.status === "pending" || r.status === "running");
 }
 
 /**
@@ -164,14 +164,14 @@ export function erroReabertura(
   sorteadoEm?: string | number | null,
 ): string | null {
   if (status !== "sorteado") return null;
-  const ultima = [...reaberturas].sort((a, b) => ms(b.criadoEm) - ms(a.criadoEm))[0];
-  if (ultima?.status !== "erro" || ms(ultima.criadoEm) < ms(sorteadoEm)) return null;
-  return ultima.erro ?? "erro desconhecido";
+  const ultima = [...reaberturas].sort((a, b) => ms(b.createdAt) - ms(a.createdAt))[0];
+  if (ultima?.status !== "failed" || ms(ultima.createdAt) < ms(sorteadoEm)) return null;
+  return ultima.error ?? "erro desconhecido";
 }
 
 export const rotuloStatusSorteio: Record<string, string> = {
-  pendente: "Na fila",
-  processando: "Sorteando",
-  concluido: "Concluído",
-  erro: "Erro",
+  pending: "Na fila",
+  running: "Sorteando",
+  done: "Concluído",
+  failed: "Erro",
 };

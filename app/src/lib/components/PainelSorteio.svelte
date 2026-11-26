@@ -1,9 +1,10 @@
 <script lang="ts">
 	// Aba Sorteio do organizador: contagem, data prevista, botão Sortear, status ao vivo do pedido
-	// (pendente → processando → concluído/erro) com a fase do worker por Instant Stream, "Tentar de
+	// (pending → running → done/failed) com a fase do worker por Instant Stream, "Tentar de
 	// novo", refazer, reabrir o grupo para novos participantes e restrições.
 	// Nunca mostra pares: o organizador só enxerga o próprio (regra `pares.view`).
-	import { id } from '@instantdb/core';
+	import { reabertura, sorteio } from '@amigo/instant/commands';
+	import { sendCommand } from 'instant-commands/client';
 	import { db } from '#lib/instant.js';
 	import { mensagemDeErro } from '#lib/erros.js';
 	import {
@@ -88,7 +89,7 @@
 	const podeReabrir = $derived(grupo.status === 'sorteado' && estado.tipo !== 'andamento');
 	const confReabrir = $derived(confirmacaoReabrir({ viram }));
 	const sorteadoEm = $derived(
-		estado.tipo === 'concluido' ? estado.sorteio?.concluidoEm : estado.tipo === 'erro' ? estado.concluido?.concluidoEm : null
+		estado.tipo === 'concluido' ? estado.sorteio?.finishedAt : estado.tipo === 'erro' ? estado.concluido?.finishedAt : null
 	);
 	const erroReabrir = $derived(erroReabertura(grupo.status, reaberturas, sorteadoEm));
 	let reabrirAberto = $state(false);
@@ -124,11 +125,7 @@
 	/** Cria o pedido da próxima rodada (`rodadaAtual + 1`). O worker faz o resto. */
 	async function pedirSorteio() {
 		const rodada = grupo.rodadaAtual + 1;
-		await db.transact(
-			db.tx.sorteios[id()]!
-				.create({ status: 'pendente', rodada, chave: `${grupo.id}:${rodada}`, criadoEm: Date.now() })
-				.link({ grupo: grupo.id })
-		);
+		await sendCommand(db.core, sorteio, { rodada, chave: `${grupo.id}:${rodada}`, grupo: grupo.id });
 	}
 
 	async function sortear() {
@@ -147,9 +144,7 @@
 	/** Pede a reabertura; o worker apaga os pares e devolve o grupo para `aberto`. */
 	async function reabrir() {
 		try {
-			await db.transact(
-				db.tx.reaberturas[id()]!.create({ status: 'pendente', criadoEm: Date.now() }).link({ grupo: grupo.id })
-			);
+			await sendCommand(db.core, reabertura, { grupo: grupo.id });
 		} catch (e) {
 			const tipo = (e as { body?: { type?: string } })?.body?.type;
 			if (tipo === 'rate-limited') throw new Error('Muitos pedidos de reabertura em pouco tempo. Tente de novo mais tarde.');
@@ -204,10 +199,10 @@
 		pronto: 'Pronto!',
 		erro: 'Algo deu errado.'
 	};
-	const fasePorStatus: Record<string, string> = { pendente: 'Na fila do servidor...', processando: 'Sorteando...' };
+	const fasePorStatus: Record<string, string> = { pending: 'Na fila do servidor...', running: 'Sorteando...' };
 
-	const passos = ['pendente', 'processando', 'concluido'] as const;
-	const nomePasso: Record<string, string> = { pendente: 'Na fila', processando: 'Sorteando', concluido: 'Pronto' };
+	const passos = ['pending', 'running', 'done'] as const;
+	const nomePasso: Record<string, string> = { pending: 'Na fila', running: 'Sorteando', done: 'Pronto' };
 </script>
 
 <div class="flex flex-col gap-5">
@@ -261,7 +256,7 @@
 					</span>
 					<div>
 						<h3 class="text-lg font-black" data-testid="sorteio-feito">
-							Sorteio feito{#if s?.concluidoEm}{' '}em {dataBr(s.concluidoEm)}{/if} (rodada {nesta} de {LIMITE_RODADAS})
+							Sorteio feito{#if s?.finishedAt}{' '}em {dataBr(s.finishedAt)}{/if} (rodada {nesta} de {LIMITE_RODADAS})
 						</h3>
 						<p class="text-sm text-muted-foreground">
 							Os pares são secretos: nem você, como organizador, vê quem tirou quem.
@@ -276,7 +271,7 @@
 					<TriangleAlertIcon class="mt-0.5 shrink-0 text-destructive" />
 					<div class="flex flex-col gap-2">
 						<p class="font-bold" data-testid="erro-sorteio">
-							O sorteio da rodada {nesta + 1} falhou: {estado.sorteio.erro ?? 'erro desconhecido'}
+							O sorteio da rodada {nesta + 1} falhou: {estado.sorteio.error ?? 'erro desconhecido'}
 						</p>
 						{#if encerrado}
 							<p class="text-sm">O grupo está encerrado.</p>
