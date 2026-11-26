@@ -28,6 +28,8 @@ export async function carregar(
   });
   const p = pedidosExclusao[0];
   if (!p) return { ignorado: true };
+  // Dentro do passo: no replay o resultado vem do ow.db e o log não se repete.
+  log("conta.apagando", { pedidoId });
   return { usuarioId: p.usuario?.id ?? null };
 }
 
@@ -105,7 +107,6 @@ export function criarExclusaoContaHandler(opcoes: { retryPolicy?: ic.RetryPolicy
       const carga = await step.run("carregar", carregar, db, command.id);
       if ("ignorado" in carga) return SEM_RESUMO;
       const { usuarioId } = carga;
-      log("conta.apagando", { pedidoId: command.id });
       const resumo = usuarioId ? await step.run("limpar-dados", limparDados, db, usuarioId) : SEM_RESUMO;
       // Apagar o usuário ANTES de a biblioteca gravar `done`: se este passo esgotar as tentativas,
       // o pedido fica `failed` e o reprocessamento diário cria um novo.

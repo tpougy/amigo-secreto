@@ -81,14 +81,24 @@ describe("reprocessar", () => {
     const u = await criarUsuario(PREFIXO);
     const pid = await pedido(u.id, "failed");
     await admin.auth.deleteUser({ id: u.id });
-    await reprocessar(admin);
+    // Guarda o que `reprocessar` escreve: nenhuma escrita pode citar este usuário.
+    const escritas: string[] = [];
+    const espiao = new Proxy(admin, {
+      get(t, k) {
+        const v = Reflect.get(t, k, t);
+        if (k === "transact") {
+          return (chunks: unknown) => {
+            escritas.push(JSON.stringify(chunks));
+            return t.transact(chunks as never);
+          };
+        }
+        return typeof v === "function" ? v.bind(t) : v;
+      },
+    });
+    await reprocessar(espiao);
+    expect(escritas.filter((e) => e.includes(u.id))).toEqual([]);
     const { pedidosExclusao } = await admin.query({ pedidosExclusao: { $: { where: { id: pid } }, usuario: {} } });
     expect(pedidosExclusao).toHaveLength(1);
     expect(pedidosExclusao[0]!.usuario).toBeFalsy();
-    const { pedidosExclusao: todos } = await admin.query({
-      pedidosExclusao: { $: { where: { status: "pending" } }, usuario: {} },
-    });
-    // Nenhum pending novo ficou sem usuário.
-    expect(todos.filter((p) => !p.usuario)).toEqual([]);
   });
 });
