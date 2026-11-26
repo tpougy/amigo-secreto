@@ -2,6 +2,8 @@
 // de rodadas por abertura. Roda contra o app de TESTE (amigo-secreto-teste). Ver pacotes/instant/perms.ts.
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { id } from "@instantdb/admin";
+import { sendCommand } from "instant-commands/client";
+import { sorteio } from "../commands";
 import {
   adminTeste,
   criarGrupoTeste,
@@ -41,13 +43,7 @@ async function esperarTipo(p: Promise<unknown>, tipo: string) {
 }
 
 async function pedirSorteio(u: Usuario, grupoId: string, rodada: number): Promise<string> {
-  const sorteioId = id();
-  await u.db.transact(
-    u.db.tx.sorteios[sorteioId]!
-      .create({ status: "pendente", rodada, chave: `${grupoId}:${rodada}`, criadoEm: Date.now() })
-      .link({ grupo: grupoId }),
-  );
-  return sorteioId;
+  return sendCommand(u.db, sorteio, { rodada, chave: `${grupoId}:${rodada}`, grupo: grupoId });
 }
 
 /** Simula o fim de um sorteio sem pares (só o estado do grupo), para avançar a rodada. */
@@ -82,7 +78,7 @@ describe("criar reabertura", () => {
     await esperarTipo(pedirReabertura(A, G.grupoId), "permission-denied");
   });
 
-  test("2. não se reabre grupo aberto, encerrado ou com sorteio pendente", async () => {
+  test("2. não se reabre grupo aberto, encerrado ou com sorteio pending", async () => {
     // Organizador dedicado: o rateLimit (5/hora) é por usuário.
     const O2 = await criarUsuario(PREFIXO);
     const aberto = await criarGrupoTeste(O2, { organizadorParticipa: true });
@@ -101,10 +97,12 @@ describe("criar reabertura", () => {
     expect(reaberturas).toEqual([]);
   });
 
-  test("status diferente de pendente → permission-denied", async () => {
+  test("create direto com status done → permission-denied; sendCommand grava pending", async () => {
     await esperarTipo(
       O.db.transact(
-        O.db.tx.reaberturas[id()]!.create({ status: "concluido", criadoEm: Date.now() }).link({ grupo: G.grupoId }),
+        O.db.tx.reaberturas[id()]!
+          .create({ status: "done", attempts: 0, createdAt: Date.now() })
+          .link({ grupo: G.grupoId }),
       ),
       "permission-denied",
     );
@@ -114,7 +112,7 @@ describe("criar reabertura", () => {
     reabertura = await pedirReabertura(O, G.grupoId);
     const a = await A.db.query({ reaberturas: {} });
     expect(a.reaberturas.map((r) => r.id)).toEqual([reabertura]);
-    expect(a.reaberturas[0]!.status).toBe("pendente");
+    expect(a.reaberturas[0]!.status).toBe("pending");
     const o = await O.db.query({ grupos: { $: { where: { id: G.grupoId } }, reaberturas: {} } });
     expect(o.grupos[0]!.reaberturas.map((r) => r.id)).toEqual([reabertura]);
     const e = await estranho.db.query({ reaberturas: {} });
@@ -127,7 +125,7 @@ describe("criar reabertura", () => {
   test("4. ninguém faz update ou unlink de reabertura; só o organizador apagaria", async () => {
     for (const u of [O, A]) {
       for (const passo of [
-        u.db.tx.reaberturas[reabertura]!.update({ status: "concluido" }),
+        u.db.tx.reaberturas[reabertura]!.update({ status: "done" }),
         u.db.tx.reaberturas[reabertura]!.unlink({ grupo: G.grupoId }),
         u.db.tx.grupos[G.grupoId]!.unlink({ reaberturas: reabertura }),
       ]) {
@@ -140,7 +138,7 @@ describe("criar reabertura", () => {
     const { reaberturas } = await admin.query({
       reaberturas: { $: { where: { id: reabertura } }, grupo: {} },
     });
-    expect(reaberturas[0]!.status).toBe("pendente");
+    expect(reaberturas[0]!.status).toBe("pending");
     expect(reaberturas[0]!.grupo?.id).toBe(G.grupoId);
   });
 
@@ -156,11 +154,11 @@ describe("criar reabertura", () => {
     );
   });
 
-  test("5. com a reabertura pendente (grupo ainda sorteado), o retardatário não entra", async () => {
+  test("5. com a reabertura pending (grupo ainda sorteado), o retardatário não entra", async () => {
     await esperarTipo(entrar(R, G.grupoId, G.codigo), "permission-denied");
   });
 
-  test("com a reabertura pendente, o organizador não pede sorteio (refazer)", async () => {
+  test("com a reabertura pending, o organizador não pede sorteio (refazer)", async () => {
     await esperarTipo(pedirSorteio(O, G.grupoId, 2), "permission-denied");
     const { sorteios } = await admin.query({ sorteios: { $: { where: { "grupo.id": G.grupoId } } } });
     expect(sorteios).toHaveLength(1);
@@ -180,7 +178,7 @@ describe("depois de reabrir", () => {
     expect(r.grupos[0]!.status).toBe("aberto");
     expect(r.grupos[0]!.rodadaAtual).toBe(1);
     expect(r.grupos[0]!.rodadaBase).toBe(1);
-    expect(r.reaberturas[0]!.status).toBe("concluido");
+    expect(r.reaberturas[0]!.status).toBe("done");
   });
 
   test("6. o retardatário entra; ninguém vê pares", async () => {

@@ -3,7 +3,9 @@
 // (`bun test pacotes/instant/testes/...`); o script `test` deste pacote passa `--env-file=../../.env`.
 import { id, init } from "@instantdb/admin";
 import { init as initCliente } from "@instantdb/core";
+import { sendCommand } from "instant-commands/client";
 import schema from "../schema";
+import { reabertura } from "../commands";
 import { camposIniciais, gerarCodigo, type Par } from "@amigo/dominio";
 
 function exigir(nome: string): string {
@@ -129,7 +131,7 @@ export async function entrar(usuario: Usuario, grupoId: string, codigo: string):
 /**
  * Faz, como admin, o que o worker fará (Task 7) ao concluir um sorteio:
  * apaga os pares anteriores do grupo (`pares.doador`/`receptor` são one-to-one, então cada
- * participante só pode estar em um par por vez), grava os novos, marca o sorteio `concluido`
+ * participante só pode estar em um par por vez), grava os novos, marca o sorteio `done`
  * e o grupo `sorteado` com `rodadaAtual` = rodada do sorteio.
  * `pares` usa ids de participantes.
  */
@@ -151,24 +153,18 @@ export async function simularWorker(a: Admin, sorteioId: string, pares: Par[]): 
         .link({ sorteio: sorteioId, doador: p.doador, receptor: p.receptor }),
     ),
     a.tx.grupos[grupoId]!.update({ status: "sorteado", rodadaAtual: sorteio.rodada }),
-    a.tx.sorteios[sorteioId]!.update({ status: "concluido", concluidoEm: Date.now() }),
+    a.tx.sorteios[sorteioId]!.update({ status: "done", attempts: 1, finishedAt: Date.now() }),
   ]);
 }
 
-/** O organizador pede a reabertura do grupo (como o botão "Reabrir" fará). Devolve o id. */
+/** O organizador pede a reabertura do grupo (`sendCommand`, como o botão "Reabrir"). Devolve o id. */
 export async function pedirReabertura(org: Usuario, grupoId: string): Promise<string> {
-  const reaberturaId = id();
-  await org.db.transact(
-    org.db.tx.reaberturas[reaberturaId]!
-      .create({ status: "pendente", criadoEm: Date.now() })
-      .link({ grupo: grupoId }),
-  );
-  return reaberturaId;
+  return sendCommand(org.db, reabertura, { grupo: grupoId });
 }
 
 /**
- * Faz, como admin, o que o workflow `reabrir-grupo` fará: apaga os pares do grupo, grava
- * `status: "aberto"` e `rodadaBase = rodadaAtual`, e marca as reaberturas pendentes `concluido`.
+ * Faz, como admin, o que o handler da reabertura fará: apaga os pares do grupo, grava
+ * `status: "aberto"` e `rodadaBase = rodadaAtual`, e marca as reaberturas abertas `done`.
  */
 export async function simularReabertura(a: Admin, grupoId: string): Promise<void> {
   const { grupos, pares } = await a.query({
@@ -181,8 +177,8 @@ export async function simularReabertura(a: Admin, grupoId: string): Promise<void
   await a.transact([
     a.tx.grupos[grupoId]!.update({ status: "aberto", rodadaBase: grupo.rodadaAtual }),
     ...grupo.reaberturas
-      .filter((r) => r.status === "pendente")
-      .map((r) => a.tx.reaberturas[r.id]!.update({ status: "concluido" })),
+      .filter((r) => r.status === "pending" || r.status === "running")
+      .map((r) => a.tx.reaberturas[r.id]!.update({ status: "done", attempts: 1, finishedAt: Date.now() })),
   ]);
 }
 

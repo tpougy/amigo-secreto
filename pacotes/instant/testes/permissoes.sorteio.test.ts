@@ -2,6 +2,8 @@
 // Roda contra o app de TESTE (amigo-secreto-teste). Ver pacotes/instant/perms.ts.
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { id } from "@instantdb/admin";
+import { sendCommand } from "instant-commands/client";
+import { sorteio } from "../commands";
 import {
   adminTeste,
   comoCliente,
@@ -47,21 +49,17 @@ async function pedirSorteio(
   rodada: number,
   chave = `${grupoId}:${rodada}`,
 ): Promise<string> {
-  const sorteioId = id();
-  await u.db.transact(
-    u.db.tx.sorteios[sorteioId]!
-      .create({ status: "pendente", rodada, chave, criadoEm: Date.now() })
-      .link({ grupo: grupoId }),
-  );
-  return sorteioId;
+  return sendCommand(u.db, sorteio, { rodada, chave, grupo: grupoId });
 }
 
-/** Como admin, marca o sorteio como erro e libera a chave (ruling do worker). */
+/** Como admin, marca o sorteio como failed e libera a chave (ruling do worker). */
 async function marcarErro(grupoId: string, sorteioId: string, rodada: number) {
   await admin.transact(
     admin.tx.sorteios[sorteioId]!.update({
-      status: "erro",
-      erro: "teste",
+      status: "failed",
+      error: "teste",
+      attempts: 1,
+      finishedAt: Date.now(),
       chave: `${grupoId}:${rodada}:erro:${sorteioId}`,
     }),
   );
@@ -121,7 +119,7 @@ describe("pares: cada um vê só o próprio", () => {
     });
     expect(r.grupos[0]!.status).toBe("sorteado");
     expect(r.grupos[0]!.rodadaAtual).toBe(1);
-    expect(r.sorteios[0]!.status).toBe("concluido");
+    expect(r.sorteios[0]!.status).toBe("done");
     expect(r.sorteios[0]!.pares).toHaveLength(4);
   });
 
@@ -172,12 +170,12 @@ describe("pares: cada um vê só o próprio", () => {
       "permission-denied",
     );
     await esperarTipo(
-      A.db.transact(A.db.tx.sorteios[sorteio1]!.update({ status: "pendente" })),
+      A.db.transact(A.db.tx.sorteios[sorteio1]!.update({ status: "pending" })),
       "permission-denied",
     );
     // Nem o organizador mexe no sorteio.
     await esperarTipo(
-      O.db.transact(O.db.tx.sorteios[sorteio1]!.update({ status: "erro" })),
+      O.db.transact(O.db.tx.sorteios[sorteio1]!.update({ status: "failed" })),
       "permission-denied",
     );
     const { pares } = await A.db.query({ pares: {} });
@@ -374,7 +372,7 @@ describe("sorteio com erro, chave e limites", () => {
       sorteios: { $: { where: { "grupo.id": G2.grupoId } } },
     });
     expect(sorteios.map((s) => s.id).sort()).toEqual([s1, s2].sort());
-    expect(sorteios.find((s) => s.id === s2)!.status).toBe("pendente");
+    expect(sorteios.find((s) => s.id === s2)!.status).toBe("pending");
   });
 
   test("chave forjada (fora de <grupoId>:<rodada>) → permission-denied", async () => {
@@ -389,18 +387,20 @@ describe("sorteio com erro, chave e limites", () => {
     await esperarTipo(pedirSorteio(O2, G2.grupoId, 4), "permission-denied");
   });
 
-  test("sorteio nasce pendente: outro status → permission-denied", async () => {
+  test("sorteio nasce pending: create direto com outro status → permission-denied", async () => {
     const sorteioId = id();
     await esperarTipo(
       O4.db.transact(
         O4.db.tx.sorteios[sorteioId]!
-          .create({ status: "concluido", rodada: 1, chave: `${G4.grupoId}:1`, criadoEm: Date.now() })
+          .create({ status: "done", attempts: 0, rodada: 1, chave: `${G4.grupoId}:1`, createdAt: Date.now() })
           .link({ grupo: G4.grupoId }),
       ),
       "permission-denied",
     );
-    // O mesmo pedido, pendente, passa.
-    await pedirSorteio(O4, G4.grupoId, 1);
+    // O sendCommand grava `pending` e passa.
+    const s = await pedirSorteio(O4, G4.grupoId, 1);
+    const { sorteios } = await admin.query({ sorteios: { $: { where: { id: s } } } });
+    expect(sorteios[0]!.status).toBe("pending");
   });
 
   test("grupo encerrado não sorteia; o 6º pedido na hora vira rate-limited", async () => {
@@ -412,14 +412,14 @@ describe("sorteio com erro, chave e limites", () => {
 });
 
 describe("entrada no grupo com sorteio em andamento", () => {
-  test("pendente/processando bloqueiam a entrada; depois do erro, entra", async () => {
+  test("pending/running bloqueiam a entrada; depois do erro, entra", async () => {
     const [O5, D1, D2, D3] = await Promise.all([1, 2, 3, 4].map(() => criarUsuario(PREFIXO)));
     const G5 = await criarGrupoTeste(O5!, { organizadorParticipa: true });
     await entrar(D1!, G5.grupoId, G5.codigo);
     // Sem sorteio, entrar funciona (controle).
     const s = await pedirSorteio(O5!, G5.grupoId, 1);
     await esperarTipo(entrar(D2!, G5.grupoId, G5.codigo), "permission-denied");
-    await admin.transact(admin.tx.sorteios[s]!.update({ status: "processando" }));
+    await admin.transact(admin.tx.sorteios[s]!.update({ status: "running", attempts: 1 }));
     await esperarTipo(entrar(D3!, G5.grupoId, G5.codigo), "permission-denied");
     // Erro (chave liberada): a porta reabre.
     await marcarErro(G5.grupoId, s, 1);
