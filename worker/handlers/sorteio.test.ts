@@ -367,6 +367,20 @@ describe("handler sorteio", () => {
     expect(grupo.status).toBe("sorteado");
   });
 
+  test("restrição citando participante removido é ignorada: sorteia com os ativos", async () => {
+    const g = await grupoCom(5);
+    const [a, b, c, , d] = g.participantes as [string, string, string, string, string];
+    await restringir(g, a, d);
+    await restringir(g, b, c);
+    await admin.transact(admin.tx.participantes[d]!.update({ removido: true }));
+    const sid = await pedirSorteio(g);
+    const fim = await waitForCommand(admin, sorteio, sid, ESPERA);
+    expect(fim.status).toBe("done");
+    expect(fim.result).toEqual({ pares: 4 });
+    const pares = await paresDoGrupo(g.grupoId);
+    expect(pares.some((p) => (p.doador!.id === b && p.receptor!.id === c) || (p.doador!.id === c && p.receptor!.id === b))).toBe(false);
+  });
+
   test("rodada inválida → failed com MSG_RODADA_INVALIDA", async () => {
     const g = await grupoCom(3);
     // A regra recusa o organizador: o pedido sai pelo admin.
