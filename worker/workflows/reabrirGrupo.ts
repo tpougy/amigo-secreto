@@ -21,9 +21,9 @@ export const specReabrirGrupo = defineWorkflowSpec<EntradaReabertura, SaidaReabe
   retryPolicy: { maximumAttempts: 1 },
 });
 
-export const MSG_GRUPO_NAO_EXISTE = "O grupo não existe mais";
-export const MSG_GRUPO_NAO_SORTEADO = "O grupo não está sorteado";
-export const MSG_SORTEIO_EM_ANDAMENTO = "Há um sorteio em andamento";
+// Movidas para handlers/reabertura.ts (este arquivo sai na Task 6).
+import { MSG_GRUPO_NAO_EXISTE, MSG_GRUPO_NAO_SORTEADO, MSG_SORTEIO_EM_ANDAMENTO } from "../handlers/reabertura";
+export { MSG_GRUPO_NAO_EXISTE, MSG_GRUPO_NAO_SORTEADO, MSG_SORTEIO_EM_ANDAMENTO };
 
 /** Passo `carregar`: reabertura inexistente ou já terminada → `{ ignorado }`. */
 export async function carregarReabertura(db: AdminDb, reaberturaId: string): Promise<{ ignorado: true } | { pendente: true }> {

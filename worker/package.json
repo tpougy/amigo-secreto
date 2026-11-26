@@ -9,6 +9,7 @@
     "@amigo/dominio": "workspace:*",
     "@amigo/instant": "workspace:*",
     "@instantdb/admin": "1.0.67",
+    "instant-commands": "workspace:*",
     "openworkflow": "0.11.0",
     "zod": "4.6.7"
   },

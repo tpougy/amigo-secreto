@@ -13,6 +13,7 @@ import { dispararComRetomada } from "../nucleo/disparar";
 import { log } from "../nucleo/log";
 import { escreverFase } from "../nucleo/progresso";
 import { seedDoSorteio } from "../nucleo/seed";
+import { RETRY_PASSO_PADRAO } from "../handlers/comum";
 
 export type AdminDb = InstantAdminDatabase<AppSchema>;
 
@@ -30,18 +31,8 @@ export type Carga = {
   paresAntigos: string[];
 };
 
-/**
- * Passos que tocam o Instant: falha transitória (rede, Instant reiniciando, desligamento
- * das 04:30) é refeita com backoff. 300 tentativas, 1 s → 60 s: ~5 h no total. Os passos
- * são idempotentes, então insistir é seguro. Se mesmo assim o run falhar, `dispararSorteio`
- * abre um run novo na próxima entrega da campainha.
- */
-export const RETRY_PASSO_PADRAO: Partial<RetryPolicy> = {
-  maximumAttempts: 300,
-  initialInterval: "1s",
-  backoffCoefficient: 2,
-  maximumInterval: "60s",
-};
+// Movido para handlers/comum.ts (este arquivo sai na Task 6).
+export { RETRY_PASSO_PADRAO };
 
 /**
  * Nível do workflow: erros fora de passos são bugs, não adianta refazer (1 tentativa).
