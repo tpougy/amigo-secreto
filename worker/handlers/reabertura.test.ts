@@ -83,6 +83,32 @@ describe("reabertura: grupo apagado antes do run", () => {
   });
 });
 
+describe("reabertura: irmã aberta", () => {
+  test("irmã aberta vira failed com MSG_GRUPO_NAO_SORTEADO na mesma transação", async () => {
+    const g = await grupoSorteado(3);
+    // Dois cliques: as duas são criadas, em lote, antes de o runner existir (determinístico).
+    const [a, b] = [id(), id()];
+    await admin.transact(
+      [a, b].map((r) =>
+        admin.tx.reaberturas[r]!
+          .create({ status: "pending", attempts: 0, createdAt: Date.now(), error: null, result: null, finishedAt: null })
+          .link({ grupo: g.grupoId }),
+      ),
+    );
+    const amb = await rodarComRunner([criarReaberturaHandler()], { db: admin });
+    try {
+      const fins = await Promise.all([a, b].map((r) => waitForCommand(admin, reabertura, r as never, ESPERA)));
+      const status = fins.map((f) => `${f.status}:${f.error ?? ""}`).sort();
+      expect(status).toEqual(["done:", `failed:${MSG_GRUPO_NAO_SORTEADO}`]);
+      expect(fins.find((f) => f.status === "done")!.result).toEqual({ pares: 3 });
+    } finally {
+      await amb.parar();
+    }
+    expect(await paresDoGrupo(g.grupoId)).toHaveLength(0);
+    expect((await lerGrupo(g.grupoId))!.status).toBe("aberto");
+  });
+});
+
 describe("handler reabertura", () => {
   let amb: RunnerTeste;
   beforeAll(async () => {
@@ -106,21 +132,6 @@ describe("handler reabertura", () => {
     expect(grupo.status).toBe("aberto");
     expect(grupo.rodadaAtual).toBe(1);
     expect(grupo.rodadaBase).toBe(1);
-  });
-
-  test("irmã aberta vira failed com MSG_GRUPO_NAO_SORTEADO na mesma transação", async () => {
-    const g = await grupoSorteado(3);
-    // Dois cliques: as duas são criadas enquanto o grupo ainda está sorteado.
-    const [a, b] = await Promise.all([
-      sendCommand(g.org.db, reabertura, { grupo: g.grupoId }),
-      sendCommand(g.org.db, reabertura, { grupo: g.grupoId }),
-    ]);
-    const fins = await Promise.all([a, b].map((r) => waitForCommand(g.org.db, reabertura, r, ESPERA)));
-    const status = fins.map((f) => `${f.status}:${f.error ?? ""}`).sort();
-    expect(status).toEqual(["done:", `failed:${MSG_GRUPO_NAO_SORTEADO}`]);
-    expect(fins.find((f) => f.status === "done")!.result).toEqual({ pares: 3 });
-    expect(await paresDoGrupo(g.grupoId)).toHaveLength(0);
-    expect((await lerGrupo(g.grupoId))!.status).toBe("aberto");
   });
 
   test("grupo não sorteado → failed com MSG_GRUPO_NAO_SORTEADO", async () => {

@@ -39,30 +39,34 @@ export async function rodarComRunner<
   const backend = BackendSqlite.connect(join(dir, "ow.db"));
   const ow = new OpenWorkflow({ backend });
   const eventos: RunnerEvent[] = [];
-  const runner = createRunner<Hs, Ss>({
-    ow,
-    db: opcoes.db,
-    handlers,
-    ...(opcoes.schedules ? { schedules: opcoes.schedules } : {}),
-    trigger: { type: "subscription" },
-    concurrency: 1,
-    onEvent: (e) => {
-      eventos.push(e);
-      opcoes.onEvent?.(e);
-    },
-  });
+  let runner: Runner | undefined;
   let parado = false;
   async function parar() {
     if (parado) return;
     parado = true;
     try {
-      await runner.stop();
+      try {
+        await runner?.stop();
+      } finally {
+        await backend.stop();
+      }
     } finally {
-      await backend.stop();
       rmSync(dir, { recursive: true, force: true });
     }
   }
   try {
+    runner = createRunner<Hs, Ss>({
+      ow,
+      db: opcoes.db,
+      handlers,
+      ...(opcoes.schedules ? { schedules: opcoes.schedules } : {}),
+      trigger: { type: "subscription" },
+      concurrency: 1,
+      onEvent: (e) => {
+        eventos.push(e);
+        opcoes.onEvent?.(e);
+      },
+    });
     await runner.start();
   } catch (e) {
     await parar();
