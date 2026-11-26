@@ -1,7 +1,9 @@
 // Schema do Instant (apps `amigo-secreto` e `amigo-secreto-teste`).
 // Aplicado com `infra/instant/instant-push.sh <prod|teste>`.
 import { i } from "@instantdb/core";
+import { commandEntities, commandLinks } from "instant-commands/schema";
 import type { ValorResposta } from "@amigo/dominio";
+import { commands } from "./commands";
 
 const _schema = i.schema({
   entities: {
@@ -62,29 +64,12 @@ const _schema = i.schema({
     restricoes: i.entity({
       motivo: i.string().optional(),
     }),
-    sorteios: i.entity({
-      status: i.string().indexed(), // pendente | processando | concluido | erro
-      erro: i.string().optional(),
-      rodada: i.number(),
-      chave: i.string().unique(), // <grupoId>:<rodada>
-      criadoEm: i.date(),
-      concluidoEm: i.date().optional(),
-    }),
     pares: i.entity({
       chave: i.string().unique(), // <sorteioId>:<doadorParticipanteId>
     }),
-    // Pedido de "apagar minha conta": o cliente cria, o worker (workflow `apagar-conta`) executa.
-    pedidosExclusao: i.entity({
-      criadoEm: i.date(),
-      status: i.string().indexed(), // pendente | concluido
-    }),
-    // Pedido de "reabrir o grupo" (desfazer o sorteio): o organizador cria, o worker (workflow
-    // `reabrir-grupo`) apaga os pares, reabre o grupo e grava `rodadaBase`.
-    reaberturas: i.entity({
-      status: i.string().indexed(), // pendente | concluido | erro
-      erro: i.string().optional(),
-      criadoEm: i.date(),
-    }),
+    // Os pedidos `sorteios`, `reaberturas` e `pedidosExclusao` (status, error, result, attempts,
+    // createdAt, finishedAt e os campos de cada um) saem dos commands (commands.ts).
+    ...commandEntities(commands),
   },
   links: {
     grupoOrganizador: {
@@ -125,10 +110,6 @@ const _schema = i.schema({
       forward: { on: "restricoes", has: "one", label: "participanteB" },
       reverse: { on: "participantes", has: "many", label: "restricoesB" },
     },
-    sorteioGrupo: {
-      forward: { on: "sorteios", has: "one", label: "grupo", onDelete: "cascade" },
-      reverse: { on: "grupos", has: "many", label: "sorteios" },
-    },
     parSorteio: {
       forward: { on: "pares", has: "one", label: "sorteio", onDelete: "cascade" },
       reverse: { on: "sorteios", has: "many", label: "pares" },
@@ -141,18 +122,12 @@ const _schema = i.schema({
       forward: { on: "pares", has: "one", label: "receptor", onDelete: "cascade" },
       reverse: { on: "participantes", has: "one", label: "recebidoDe" },
     },
-    pedidoExclusaoUsuario: {
-      forward: { on: "pedidosExclusao", has: "one", label: "usuario" },
-      reverse: { on: "$users", has: "many", label: "pedidosExclusao" },
-    },
-    reaberturaGrupo: {
-      forward: { on: "reaberturas", has: "one", label: "grupo", onDelete: "cascade" },
-      reverse: { on: "grupos", has: "many", label: "reaberturas" },
-    },
     grupoCapa: {
       forward: { on: "grupos", has: "one", label: "capa" },
       reverse: { on: "$files", has: "one", label: "grupoCapa" },
     },
+    // `sorteioGrupo`, `reaberturaGrupo` e `pedidoExclusaoUsuario` saem dos commands.
+    ...commandLinks(commands),
   },
   rooms: {},
 });

@@ -1,4 +1,4 @@
-// Processo principal do worker: OpenWorkflow (SQLite) + campainha do Instant.
+// Processo principal do worker: OpenWorkflow (SQLite) + runner do instant-commands (assinatura).
 // Env: SORTEIO_SEGREDO, INSTANT_APP_ID, INSTANT_ADMIN_TOKEN, INSTANT_API_URI, OW_DB (/data/ow.db),
 // OW_CONCORRENCIA (2).
 import { init } from "@instantdb/admin";
@@ -6,15 +6,15 @@ import { OpenWorkflow } from "openworkflow";
 import { BackendSqlite } from "openworkflow/sqlite";
 import schema from "@amigo/instant";
 import { log } from "./nucleo/log";
+import { camposDoEvento } from "./nucleo/logEvento";
 import { validarSegredo } from "./nucleo/seed";
-import { definirApagarConta, processarPedidosExclusao } from "./workflows/apagarConta";
+import { createRunner } from "./commands";
+import { criarExclusaoContaHandler } from "./handlers/exclusaoConta";
+import { criarReaberturaHandler } from "./handlers/reabertura";
+import { aoFalharSorteio, criarSorteioHandler } from "./handlers/sorteio";
+import { reprocessarExclusoes } from "./schedules/reprocessarExclusoes";
 import { definirLimpeza } from "./workflows/limparHistorico";
 import { definirEstatisticas } from "./workflows/estatisticas";
-import { definirReabrirGrupo, processarReaberturas } from "./workflows/reabrirGrupo";
-import { definirSorteio, processarPendentes } from "./workflows/sortear";
-
-/** Força uma reassinatura periódica: cobre conexões meio-abertas que nunca dão erro. */
-const RENOVAR_CAMPAINHA_MS = 10 * 60 * 1000;
 
 function exigir(nome: string): string {
   const v = process.env[nome];
@@ -46,39 +46,49 @@ const concorrencia = Number(process.env.OW_CONCORRENCIA ?? "2") || 2;
 const owDb = process.env.OW_DB ?? "/data/ow.db";
 const backend = BackendSqlite.connect(owDb);
 const ow = new OpenWorkflow({ backend });
-definirSorteio(ow, db, { segredo });
-definirApagarConta(ow, db);
-definirReabrirGrupo(ow, db);
+// Workflows simples (sem command): registrados no `ow` antes de `runner.start()`, que sobe o worker.
 await definirLimpeza(ow, owDb); // runs encerrados há mais de 30 dias, todo dia às 05:00
 await definirEstatisticas(ow, db); // contador público da landing: de hora em hora e uma vez agora
 
-const worker = ow.newWorker({ concurrency: concorrencia });
-await worker.start();
+const runner = createRunner({
+  ow,
+  db,
+  handlers: [criarSorteioHandler({ segredo }), criarReaberturaHandler(), criarExclusaoContaHandler()],
+  schedules: [reprocessarExclusoes],
+  trigger: { type: "subscription" },
+  concurrency: concorrencia,
+  onEvent: (e) => {
+    log(`ic.${e.type}`, camposDoEvento(e));
+    if (e.type !== "command.failed") return;
+    if (e.command === "sorteio" && e.commandId) {
+      // Fase `erro` no stream de progresso. Best effort: nunca lança.
+      try {
+        aoFalharSorteio(db, e.commandId);
+      } catch (err) {
+        log("sorteio.stream_erro_falhou", { sorteioId: e.commandId, motivo: (err as Error).name });
+      }
+    } else if (e.command === "exclusao-conta") {
+      log("exclusao.falhou", { pedidoId: e.commandId ?? "" });
+    }
+  },
+});
+await runner.start();
 log("worker.iniciado", { concorrencia, pid: process.pid });
-
-// Uma campainha por fila: sorteios pendentes, pedidos de exclusão de conta e reaberturas.
-const filas = [
-  { nome: "sorteios", abrir: () => processarPendentes(ow, db) },
-  { nome: "pedidosExclusao", abrir: () => processarPedidosExclusao(ow, db) },
-  { nome: "reaberturas", abrir: () => processarReaberturas(ow, db) },
-];
-let campainhas = filas.map((f) => f.abrir());
-const watchdog = setInterval(() => {
-  for (const c of campainhas) c.parar();
-  campainhas = filas.map((f) => f.abrir());
-  for (const f of filas) log("campainha.renovada", { nome: f.nome });
-}, RENOVAR_CAMPAINHA_MS);
 
 let parando = false;
 async function parar(sinal: string) {
   if (parando) return;
   parando = true;
   log("worker.parando", { sinal });
-  clearInterval(watchdog);
-  for (const c of campainhas) c.parar();
-  await worker.stop();
-  log("worker.parado", {});
-  process.exit(0);
+  try {
+    await runner.stop();
+    log("worker.parado", {});
+  } catch (e) {
+    // Só a classe do erro (contrato de nucleo/log.ts: nada de texto cru).
+    log("worker.erro_ao_parar", { erroClasse: e instanceof Error ? e.constructor.name : "desconhecido" });
+  } finally {
+    process.exit(0);
+  }
 }
 process.on("SIGTERM", () => void parar("SIGTERM"));
 process.on("SIGINT", () => void parar("SIGINT"));

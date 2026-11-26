@@ -11,6 +11,7 @@
         "@amigo/dominio": "workspace:*",
         "@amigo/instant": "workspace:*",
         "@instantdb/admin": "1.0.67",
+        "instant-commands": "workspace:*",
       },
     },
     "app": {
@@ -23,6 +24,7 @@
         "@fontsource-variable/geist-mono": "^5.3.0",
         "@instantdb/core": "1.0.67",
         "@instantdb/svelte": "1.0.67",
+        "instant-commands": "workspace:*",
         "jsqr": "^1.4.0",
         "mode-watcher": "^1.1.0",
         "qrcode": "1.5.4",
@@ -87,6 +89,8 @@
         "@amigo/dominio": "workspace:*",
         "@instantdb/admin": "1.0.67",
         "@instantdb/core": "1.0.67",
+        "instant-commands": "workspace:*",
+        "zod": "4.6.7",
       },
       "devDependencies": {
         "@types/bun": "1.4.5",
@@ -124,6 +128,7 @@
         "@amigo/dominio": "workspace:*",
         "@amigo/instant": "workspace:*",
         "@instantdb/admin": "1.0.67",
+        "instant-commands": "workspace:*",
         "openworkflow": "0.11.0",
         "zod": "4.6.7",
       },

@@ -1,6 +1,6 @@
 # Migrar o amigo-secreto para o `instant-commands`: plano revisado
 
-**Data:** 2026-11-25 · **Status:** plano revisado depois do gancho `onFailure` (na `main` até `6a0c6f0`). Depois da consulta de produção (nada a converter), o próximo passo é o design da migração completa, em corte único.
+**Data:** 2026-11-25 · **Status:** implementado na branch `feat/migracao-instant-commands`; corte em produção pendente (roteiro em `docs/runbooks/corte-instant-commands.md`). Texto abaixo: plano revisado depois do gancho `onFailure` (na `main` até `6a0c6f0`). Depois da consulta de produção (nada a converter), o próximo passo é o design da migração completa, em corte único.
 
 ## Onde estamos
 

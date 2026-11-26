@@ -802,3 +802,4 @@ Itens menores que as revisões adiaram. Nada aqui bloqueia o uso. O que a rodada
   - nomes de step `ic:*` são reservados só na documentação.
 - **Código duplicado:** `isCommandFailure` aparece em `step.ts` e em `execution.ts`.
 - **Teste instável:** `client > core SDK path` deu timeout uma vez numa execução intermediária.
+- **Regras de link em entidades de sistema:** opção em `mergePerms` para não gerar as regras reversas `link`/`unlink: "true"` em entidades como `$users` (hoje o usuário consegue desvincular o próprio pedido pendente com uma transação forjada). Opcional: `errorName` em `run.failed`, para o `erroClasse` dos logs deixar de ser quase sempre `desconhecido`.

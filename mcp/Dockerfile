@@ -8,11 +8,14 @@ ENV NODE_ENV=production DO_NOT_TRACK=1 PORT=8080 MCP_TOKENS_DIR=/data/tokens
 COPY package.json bun.lock ./
 COPY pacotes/dominio/package.json pacotes/dominio/
 COPY pacotes/instant/package.json pacotes/instant/
+COPY pacotes/instant-commands/package.json pacotes/instant-commands/
 COPY mcp/package.json mcp/
-RUN bun install --frozen-lockfile --production --filter amigo-secreto --filter @amigo/mcp && rm -rf /root/.bun/install/cache
+RUN bun install --frozen-lockfile --production --filter amigo-secreto --filter @amigo/mcp --filter instant-commands && rm -rf /root/.bun/install/cache
 
-# Do @amigo/instant, só o schema: o kit de teste (@amigo/instant/teste) não entra em produção.
-COPY pacotes/instant/schema.ts pacotes/instant/
+# Do @amigo/instant, só schema e commands: o kit de teste (@amigo/instant/teste) não entra em produção.
+COPY pacotes/instant/schema.ts pacotes/instant/commands.ts pacotes/instant/
+# Da instant-commands, só o código (sem testes nem README).
+COPY pacotes/instant-commands/src pacotes/instant-commands/src
 COPY pacotes/dominio pacotes/dominio
 COPY mcp mcp
 

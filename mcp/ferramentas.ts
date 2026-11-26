@@ -119,7 +119,7 @@ export async function meuAmigoSecreto(db: Db, grupo: string): Promise<AmigoSecre
   const ctx = await contexto(db, grupo);
   if ("erro" in ctx) return ctx;
   // Sorteio em andamento: o par atual está para mudar. Não devolve nem marca `viuParNaRodada`.
-  if (ctx.grupo.sorteios.some((s) => s.status === "pendente" || s.status === "processando")) {
+  if (ctx.grupo.sorteios.some((s) => s.status === "pending" || s.status === "running")) {
     // Grupo reaberto (`aberto` com rodada >= 1) não tem par a refazer: é um sorteio novo.
     const refazendo = ctx.grupo.status !== "aberto" && ctx.grupo.rodadaAtual >= 1;
     return { aviso: refazendo ? AVISO_REFAZENDO : AVISO_SEM_SORTEIO };
@@ -133,7 +133,7 @@ export async function meuAmigoSecreto(db: Db, grupo: string): Promise<AmigoSecre
     },
   });
   const par = pares
-    .filter((p) => p.sorteio?.status === "concluido" && p.receptor)
+    .filter((p) => p.sorteio?.status === "done" && p.receptor)
     .sort((a, b) => (b.sorteio?.rodada ?? 0) - (a.sorteio?.rodada ?? 0))[0];
   if (!par?.receptor || !par.sorteio) return { aviso: AVISO_SEM_SORTEIO };
 
@@ -327,7 +327,7 @@ export async function painelGrupo(db: Db, grupo: string): Promise<PainelGrupo | 
     dataEvento: isoParaDia(g.dataEvento) || null,
     valorSugerido: g.valorSugerido ?? null,
     perfisVisiveis: !!g.perfisVisiveis,
-    sorteioEmAndamento: g.sorteios.some((x) => x.status === "pendente" || x.status === "processando"),
+    sorteioEmAndamento: g.sorteios.some((x) => x.status === "pending" || x.status === "running"),
     participantes: [...g.participantes]
       .sort((a, b) => new Date(a.entrouEm).getTime() - new Date(b.entrouEm).getTime())
       .map((p) => ({ apelido: p.apelido, perfilCompleto: p.perfilCompleto, removido: p.removido })),

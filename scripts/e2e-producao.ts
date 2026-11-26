@@ -5,6 +5,8 @@
 // código e a rodada 2 é sorteada com os 5.
 import { id, init } from "@instantdb/admin";
 import schema from "@amigo/instant";
+import { reabertura, sorteio } from "@amigo/instant/commands";
+import { sendCommand } from "instant-commands/client";
 import { camposIniciais, formatarCodigo, gerarCodigo, normalizarCodigo } from "@amigo/dominio";
 
 const PRAZO_MS = 60_000;
@@ -73,7 +75,7 @@ async function lerStatus(entidade: "sorteios" | "reaberturas", alvoId: string): 
   return r[0]?.status ?? "";
 }
 
-/** Espera o worker de produção tirar o pedido de `pendente`/`processando`; devolve o status final. */
+/** Espera o worker de produção tirar o pedido de `pending`/`running`; devolve o status final. */
 async function esperarWorker(entidade: "sorteios" | "reaberturas", alvoId: string): Promise<string> {
   const inicio = Date.now();
   let status = "";
@@ -81,7 +83,7 @@ async function esperarWorker(entidade: "sorteios" | "reaberturas", alvoId: strin
     const s = await lerStatus(entidade, alvoId);
     if (s !== status) passo(`   ${entidade}: ${s}`);
     status = s;
-    if (status !== "pendente" && status !== "processando") break;
+    if (status !== "pending" && status !== "running") break;
     await dormir(500);
   }
   passo(`   em ${((Date.now() - inicio) / 1000).toFixed(1)}s`);
@@ -104,13 +106,7 @@ async function conferirPares(usuarios: Usuario[], participantes: string[], rodad
 }
 
 async function pedirSorteio(org: Usuario, grupoId: string, rodada: number): Promise<string> {
-  const sorteioId = id();
-  await org.db.transact(
-    org.db.tx.sorteios[sorteioId]!
-      .create({ status: "pendente", rodada, chave: `${grupoId}:${rodada}`, criadoEm: Date.now() })
-      .link({ grupo: grupoId }),
-  );
-  return sorteioId;
+  return sendCommand(org.db, sorteio, { rodada, chave: `${grupoId}:${rodada}`, grupo: grupoId });
 }
 
 async function limpar(): Promise<void> {
@@ -200,9 +196,9 @@ async function main(): Promise<void> {
     sorteios.push(await pedirSorteio(org!, grupoId, 1));
     passo(`3. sorteio ${sorteios[0]} pedido`);
 
-    // 4. espera `concluido` (o amigo-worker de produção é quem processa)
+    // 4. espera `done` (o amigo-worker de produção é quem processa)
     const s1 = await esperarWorker("sorteios", sorteios[0]!);
-    confere(s1 === "concluido", `sorteio concluído em até ${PRAZO_MS / 1000}s (status: ${s1})`);
+    confere(s1 === "done", `sorteio concluído em até ${PRAZO_MS / 1000}s (status: ${s1})`);
     passo("4. rodada 1 concluída");
 
     // 5. cada um vê exatamente 1 par, o dele, e os receptores formam uma permutação
@@ -210,16 +206,13 @@ async function main(): Promise<void> {
     passo("5. cada participante vê exatamente 1 par");
 
     // 6. o organizador reabre o grupo (como o botão "Reabrir grupo para novos participantes")
-    const reaberturaId = id();
+    const reaberturaId = await sendCommand(org!.db, reabertura, { grupo: grupoId });
     reaberturas.push(reaberturaId);
-    await org!.db.transact(
-      org!.db.tx.reaberturas[reaberturaId]!.create({ status: "pendente", criadoEm: Date.now() }).link({ grupo: grupoId }),
-    );
     passo(`6. reabertura ${reaberturaId} pedida`);
 
     // 7. o worker desfaz o sorteio: grupo aberto, rodadaBase = 1 e ninguém vê par
     const r1 = await esperarWorker("reaberturas", reaberturaId);
-    confere(r1 === "concluido", `reabertura concluída em até ${PRAZO_MS / 1000}s (status: ${r1})`);
+    confere(r1 === "done", `reabertura concluída em até ${PRAZO_MS / 1000}s (status: ${r1})`);
     const { grupos } = await admin.query({ grupos: { $: { where: { id: grupoId } } } });
     confere(grupos[0]?.status === "aberto", "grupo voltou a aberto");
     confere(grupos[0]?.rodadaAtual === 1 && grupos[0]?.rodadaBase === 1, "rodadaAtual 1 e rodadaBase 1");
@@ -237,7 +230,7 @@ async function main(): Promise<void> {
     // 9. sorteia a rodada 2 com os 5
     sorteios.push(await pedirSorteio(org!, grupoId, 2));
     const s2 = await esperarWorker("sorteios", sorteios[1]!);
-    confere(s2 === "concluido", `rodada 2 concluída em até ${PRAZO_MS / 1000}s (status: ${s2})`);
+    confere(s2 === "done", `rodada 2 concluída em até ${PRAZO_MS / 1000}s (status: ${s2})`);
     passo("9. rodada 2 concluída");
 
     // 10. cada um dos 5 vê exatamente 1 par, o da rodada 2

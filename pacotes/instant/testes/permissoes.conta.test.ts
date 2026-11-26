@@ -2,6 +2,8 @@
 // Roda contra o app de TESTE (amigo-secreto-teste). Ver pacotes/instant/perms.ts.
 import { afterAll, beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { id, lookup } from "@instantdb/admin";
+import { sendCommand } from "instant-commands/client";
+import { exclusaoConta, sorteio } from "../commands";
 import {
   adminTeste,
   adminTesteSemSchema,
@@ -39,12 +41,7 @@ beforeAll(async () => {
   pO = await entrar(O, G.grupoId, G.codigo);
   pA = await entrar(A, G.grupoId, G.codigo);
   pB = await entrar(B, G.grupoId, G.codigo);
-  sorteioId = id();
-  await O.db.transact(
-    O.db.tx.sorteios[sorteioId]!
-      .create({ status: "pendente", rodada: 1, chave: `${G.grupoId}:1`, criadoEm: Date.now() })
-      .link({ grupo: G.grupoId }),
-  );
+  sorteioId = await sendCommand(O.db, sorteio, { rodada: 1, chave: `${G.grupoId}:1`, grupo: G.grupoId });
   await simularWorker(admin, sorteioId, [
     { doador: pA, receptor: pB },
     { doador: pB, receptor: pO },
@@ -243,12 +240,7 @@ describe("capa do grupo ($files)", () => {
   });
 
   test("progresso do sorteio por stream: membro lê, estranho não", async () => {
-    const sorteioId = id();
-    await O2.db.transact(
-      O2.db.tx.sorteios[sorteioId]!
-        .create({ status: "pendente", rodada: 1, chave: `${G2.grupoId}:1`, criadoEm: Date.now() })
-        .link({ grupo: G2.grupoId }),
-    );
+    const sorteioId = await sendCommand(O2.db, sorteio, { rodada: 1, chave: `${G2.grupoId}:1`, grupo: G2.grupoId });
     const clientId = `sorteio-${sorteioId}`;
     const w = admin.streams.createWriteStream({ clientId }).getWriter();
     await w.write("embaralhando\n");
@@ -302,37 +294,62 @@ describe("pedidosExclusao", () => {
   });
 
   test("o próprio usuário cria o pedido ligado a si e o vê; outro não vê", async () => {
-    pedido = id();
-    await P.db.transact(
-      P.db.tx.pedidosExclusao[pedido]!.create({ criadoEm: Date.now(), status: "pendente" }).link({ usuario: P.id }),
-    );
+    pedido = await sendCommand(P.db, exclusaoConta, { usuario: P.id });
     expect((await P.db.query({ pedidosExclusao: {} })).pedidosExclusao.map((x) => x.id)).toEqual([pedido]);
     expect((await Q.db.query({ pedidosExclusao: {} })).pedidosExclusao).toEqual([]);
   });
 
-  test("não cria pedido para outra pessoa, sem dono ou já concluído", async () => {
+  // Campos que o sendCommand grava; só o `status` varia.
+  const novo = (status: "pending" | "done") => ({
+    status,
+    attempts: 0,
+    createdAt: Date.now(),
+  });
+
+  test("não cria pedido para outra pessoa, sem dono ou já done (create direto)", async () => {
+    const ids = [id(), id(), id()];
     for (const passo of [
-      Q.db.tx.pedidosExclusao[id()]!.create({ criadoEm: Date.now(), status: "pendente" }).link({ usuario: P.id }),
-      Q.db.tx.pedidosExclusao[id()]!.create({ criadoEm: Date.now(), status: "pendente" }),
-      Q.db.tx.pedidosExclusao[id()]!.create({ criadoEm: Date.now(), status: "concluido" }).link({ usuario: Q.id }),
+      Q.db.tx.pedidosExclusao[ids[0]!]!.create(novo("pending")).link({ usuario: P.id }),
+      Q.db.tx.pedidosExclusao[ids[1]!]!.create(novo("pending")),
+      Q.db.tx.pedidosExclusao[ids[2]!]!.create(novo("done")).link({ usuario: Q.id }),
     ]) {
       expect(tipoErro(await erroDe(Q.db.transact(passo)))).toBe("permission-denied");
     }
-    const { pedidosExclusao } = await admin.query({ pedidosExclusao: { usuario: {} } });
-    expect(pedidosExclusao.filter((x) => x.usuario?.id === Q.id || !x.usuario)).toEqual([]);
+    // Só os ids deste teste: pedidos de outros testes sobrevivem aos usuários apagados (sem cascata).
+    const { pedidosExclusao } = await admin.query({ pedidosExclusao: { $: { where: { id: { $in: ids } } } } });
+    expect(pedidosExclusao).toEqual([]);
   });
 
   test("o pedido é imutável para o cliente (update, delete, unlink)", async () => {
     for (const passo of [
-      P.db.tx.pedidosExclusao[pedido]!.update({ status: "concluido" }),
+      P.db.tx.pedidosExclusao[pedido]!.update({ status: "done" }),
       P.db.tx.pedidosExclusao[pedido]!.delete(),
       P.db.tx.pedidosExclusao[pedido]!.unlink({ usuario: P.id }),
     ]) {
       expect(tipoErro(await erroDe(P.db.transact(passo)))).toBe("permission-denied");
     }
     const { pedidosExclusao } = await admin.query({ pedidosExclusao: { $: { where: { id: pedido } }, usuario: {} } });
-    expect(pedidosExclusao[0]!.status).toBe("pendente");
+    expect(pedidosExclusao[0]!.status).toBe("pending");
     expect(pedidosExclusao[0]!.usuario?.id).toBe(P.id);
+  });
+
+  test("A não liga nem desliga o pedido de B pelo lado de $users", async () => {
+    // P tem o `pedido`; Q tenta ligar/desligar pelo lado `$users` (e um terceiro pedido solto).
+    const solto = await sendCommand(Q.db, exclusaoConta, { usuario: Q.id });
+    for (const passo of [
+      Q.db.tx.$users[P.id]!.link({ pedidosExclusao: solto }),
+      Q.db.tx.$users[Q.id]!.link({ pedidosExclusao: pedido }),
+      Q.db.tx.$users[P.id]!.unlink({ pedidosExclusao: pedido }),
+      Q.db.tx.$users[Q.id]!.unlink({ pedidosExclusao: solto }),
+    ]) {
+      expect(tipoErro(await erroDe(Q.db.transact(passo)))).toBe("permission-denied");
+    }
+    const { pedidosExclusao } = await admin.query({
+      pedidosExclusao: { $: { where: { id: { $in: [pedido, solto] } } }, usuario: {} },
+    });
+    expect(pedidosExclusao.find((x) => x.id === pedido)!.usuario?.id).toBe(P.id);
+    expect(pedidosExclusao.find((x) => x.id === solto)!.usuario?.id).toBe(Q.id);
+    await admin.transact(admin.tx.pedidosExclusao[solto]!.delete());
   });
 
   afterAll(async () => {

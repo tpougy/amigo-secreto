@@ -1,9 +1,10 @@
 <script lang="ts">
 	// Minha conta: e-mail, exportar meus dados (JSON) e apagar minha conta.
-	// Apagar cria um `pedidosExclusao`; o worker (workflow `apagar-conta`) faz o resto, como admin,
+	// Apagar cria um `pedidosExclusao`; o worker (handler `exclusao-conta`) faz o resto, como admin,
 	// porque o cliente não pode apagar `$users`.
 	import { goto } from '$app/navigation';
-	import { id } from '@instantdb/core';
+	import { exclusaoConta } from '@amigo/instant/commands';
+	import { sendCommand } from 'instant-commands/client';
 	import { db } from '#lib/instant.js';
 	import { sairPara, usarSessao } from '#lib/sessao.svelte.js';
 	import {
@@ -56,10 +57,7 @@
 	async function apagarConta() {
 		const uid = sessao.usuario?.id;
 		if (!uid) return;
-		const pedidoId = id();
-		await db.transact(
-			db.tx.pedidosExclusao[pedidoId]!.create({ criadoEm: Date.now(), status: 'pendente' }).link({ usuario: uid })
-		);
+		const pedidoId = await sendCommand(db.core, exclusaoConta, { usuario: uid });
 		// Confirma no servidor antes de sair: o signOut descartaria uma transação ainda na fila.
 		const r = await db.queryOnce({ pedidosExclusao: { $: { where: { id: pedidoId } } } });
 		if (!r.data.pedidosExclusao.length) throw new Error('Não deu para registrar o pedido. Tente de novo.');

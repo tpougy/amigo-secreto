@@ -7,7 +7,7 @@ Os `docs/superpowers/specs` e `plans` são registros datados e podem citar camin
 | Pasta | O que tem | Quando mexer |
 |---|---|---|
 | `app/` | SPA SvelteKit (`@instantdb/svelte`), publicada no Worker `amigo-secreto` | Telas e fluxos do site |
-| `worker/` | Worker do OpenWorkflow: sorteio, reabertura e exclusão de conta (`amigo-worker`) | Regras que rodam no servidor |
+| `worker/` | Worker do instant-commands (OpenWorkflow por baixo): sorteio, reabertura e exclusão de conta (`amigo-worker`) | Regras que rodam no servidor |
 | `mcp/` | Servidor MCP (fastmcp + Google) que age como o usuário logado (`amigo-mcp`) | Ferramentas do assistente de IA |
 | `pacotes/instant/` | Schema, regras e testes de permissão (fonte da verdade do Instant) | Mudar dados ou regras |
 | `pacotes/dominio/` | Lógica pura: código do grupo, sorteio, campos de perfil, temas | Regras de negócio sem I/O |
