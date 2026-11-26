@@ -80,9 +80,15 @@ async function parar(sinal: string) {
   if (parando) return;
   parando = true;
   log("worker.parando", { sinal });
-  await runner.stop();
-  log("worker.parado", {});
-  process.exit(0);
+  try {
+    await runner.stop();
+    log("worker.parado", {});
+  } catch (e) {
+    // Só a classe do erro (contrato de nucleo/log.ts: nada de texto cru).
+    log("worker.erro_ao_parar", { erroClasse: e instanceof Error ? e.constructor.name : "desconhecido" });
+  } finally {
+    process.exit(0);
+  }
 }
 process.on("SIGTERM", () => void parar("SIGTERM"));
 process.on("SIGINT", () => void parar("SIGINT"));
