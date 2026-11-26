@@ -146,6 +146,17 @@ describe("handler reabertura", () => {
     expect(grupo.rodadaBase ?? null).toBeNull();
   });
 
+  test("grupo encerrado → failed com MSG_GRUPO_NAO_SORTEADO e o grupo continua encerrado", async () => {
+    const g = await grupoSorteado(3);
+    await admin.transact(admin.tx.grupos[g.grupoId]!.update({ status: "encerrado" }));
+    const r = await sendCommand(admin, reabertura, { grupo: g.grupoId });
+    const fim = await waitForCommand(admin, reabertura, r, ESPERA);
+    expect(fim.status).toBe("failed");
+    expect(fim.error).toBe(MSG_GRUPO_NAO_SORTEADO);
+    expect((await lerGrupo(g.grupoId))!.status).toBe("encerrado");
+    expect(await paresDoGrupo(g.grupoId)).toHaveLength(3);
+  });
+
   test("sorteio aberto no grupo → failed com MSG_SORTEIO_EM_ANDAMENTO", async () => {
     const g = await grupoSorteado(3);
     // Sorteio da rodada 2 `running` (escrito pelo admin: não há handler de sorteio neste runner).

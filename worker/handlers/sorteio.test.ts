@@ -26,6 +26,7 @@ import {
   criarSorteioHandler,
   gravarPares,
   liberarChave,
+  MSG_GRUPO_ENCERRADO,
   MSG_PADRAO_SORTEIO,
   MSG_PARTICIPANTES_MUDARAM,
   MSG_RODADA_INVALIDA,
@@ -215,6 +216,30 @@ describe("sorteio: mudanças durante o run", () => {
     await admin.transact(admin.tx.sorteios[sid]!.delete());
   });
 
+  test("grupo encerrado durante o run → failed com MSG_GRUPO_ENCERRADO, grupo intocado e chave renomeada", async () => {
+    const g = await grupoCom(3);
+    let encerrou = false;
+    const db = dbCom(async () => {
+      if (encerrou) return;
+      encerrou = true;
+      await admin.transact(admin.tx.grupos[g.grupoId]!.update({ status: "encerrado" }));
+    });
+    const amb = await rodarComRunner([criarSorteioHandler({ segredo: SEGREDO_TESTE })], { db });
+    try {
+      const sid = await pedirSorteio(g);
+      const fim = await waitForCommand(admin, sorteio, sid, ESPERA);
+      expect(fim.status).toBe("failed");
+      expect(fim.error).toBe(MSG_GRUPO_ENCERRADO);
+      expect((await lerSorteio(sid))!.chave).toBe(`${g.grupoId}:1:erro:${sid}`);
+    } finally {
+      await amb.parar();
+    }
+    const grupo = (await lerGrupo(g.grupoId))!;
+    expect(grupo.status).toBe("encerrado");
+    expect(grupo.rodadaAtual).toBe(0);
+    expect(await paresDoGrupo(g.grupoId)).toHaveLength(0);
+  });
+
   test("grupo apagado durante o run → nada recriado", async () => {
     const g = await grupoCom(3);
     let apagado = false;
@@ -255,6 +280,14 @@ describe("liberarChave", () => {
     const chunks = liberarChave({ db: admin, reason: "fail", error: "x", command: { id: sid, chave: "g:1", rodada: 1 } as never });
     expect(chunks).toHaveLength(1);
     expect(liberarChave({ db: admin, reason: "invalid_input", error: "x", command: { id: sid } as never })).toEqual([]);
+  });
+
+  test("valor exato renomeado; chave que já termina em :erro:<id> não ganha sufixo duplo", () => {
+    const sid = id();
+    const [chunk] = liberarChave({ db: admin, reason: "fail", error: "x", command: { id: sid, chave: "g:1", rodada: 1 } as never });
+    expect(JSON.stringify(chunk)).toContain(`g:1:erro:${sid}`);
+    expect(JSON.stringify(chunk)).not.toContain(`:erro:${sid}:erro:`);
+    expect(liberarChave({ db: admin, reason: "fail", error: "x", command: { id: sid, chave: `g:1:erro:${sid}`, rodada: 1 } as never })).toEqual([]);
   });
 });
 
@@ -308,6 +341,30 @@ describe("handler sorteio", () => {
     const r = await gravarPares(admin, SEGREDO_TESTE, handle(sid), carga);
     expect(r).toEqual({ pares: 4 });
     expect((await paresDoGrupo(g.grupoId)).map((p) => p.id).sort()).toEqual(antes);
+  });
+
+  test("rodada 2 depois de uma anterior: apaga os pares antigos e grava só os novos (um por doador/receptor)", async () => {
+    const { g, sid: sid1 } = feliz;
+    const antigos = (await paresDoGrupo(g.grupoId)).map((p) => p.id);
+    expect(antigos).toHaveLength(4);
+    // Um participante sai (removido) e o organizador pede a rodada 2.
+    const saiu = g.participantes[3]!;
+    await admin.transact(admin.tx.participantes[saiu]!.update({ removido: true }));
+    const sid2 = await pedirSorteio(g, 2);
+    const fim = await waitForCommand(g.org.db, sorteio, sid2, ESPERA);
+    expect(fim.status).toBe("done");
+    expect(fim.result).toEqual({ pares: 3 });
+
+    const todos = await paresDoGrupo(g.grupoId);
+    expect(todos).toHaveLength(3);
+    expect(todos.some((p) => antigos.includes(p.id))).toBe(false);
+    const ativos = g.participantes.slice(0, 3).sort();
+    expect(todos.map((p) => p.doador!.id).sort()).toEqual(ativos);
+    expect(todos.map((p) => p.receptor!.id).sort()).toEqual(ativos);
+    expect((await lerSorteio(sid1))!.pares).toHaveLength(0);
+    const grupo = (await lerGrupo(g.grupoId))!;
+    expect(grupo.rodadaAtual).toBe(2);
+    expect(grupo.status).toBe("sorteado");
   });
 
   test("rodada inválida → failed com MSG_RODADA_INVALIDA", async () => {

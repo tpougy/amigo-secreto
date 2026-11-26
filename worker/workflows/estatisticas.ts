@@ -4,7 +4,7 @@
 import { defineWorkflowSpec, type OpenWorkflow } from "openworkflow";
 import { atualizarContagem, ehGrupoDeTeste, ESTATISTICAS_ID, type Contagem } from "@amigo/dominio";
 import { log } from "../nucleo/log";
-import type { AdminDb } from "./sortear";
+import type { AdminDb } from "../handlers/comum";
 
 export const CRON_ESTATISTICAS = "0 * * * *";
 
