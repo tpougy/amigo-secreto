@@ -2,13 +2,15 @@
 
 > **ATENÇÃO: este roteiro mexe na PRODUÇÃO** (schema e regras do Instant, `amigo-worker`, `amigo-mcp` e o front). **Só execute com o "pode seguir" explícito do Thomaz**, passo a passo. Quem implementou a migração não executa nada daqui por conta própria.
 
-Origem: seção "Corte" de [`docs/superpowers/specs/2026-11-25-migracao-instant-commands-design.md`](../superpowers/specs/2026-11-25-migracao-instant-commands-design.md). Código na branch `feat/migracao-instant-commands`. Os comandos partem da raiz do repositório, na branch já integrada e com o `HEAD` que vai para produção (o `deploy.sh` empurra o `HEAD`).
+Origem: seção "Corte" de [`docs/superpowers/specs/2026-11-25-migracao-instant-commands-design.md`](../superpowers/specs/2026-11-25-migracao-instant-commands-design.md). Código na branch `feat/migracao-instant-commands`. Os comandos partem da raiz do repositório, **na branch `feat/migracao-instant-commands`, ainda não integrada à `main`**, com o `HEAD` que vai para produção.
+
+**Ordem do merge (importante):** um push na `main` dispara o Cloudflare Workers Builds, que publica `app/` na hora (`infra/front.sh:2-3`). Se a `main` receber a migração antes do push de schema/regras, o front novo ficaria no ar falando `sendCommand` com um backend que ainda não o conhece. Por isso **todos os passos até o deploy do front rodam do `HEAD` da branch** (`infra/dokku/deploy.sh` empurra o `HEAD` local; `infra/front.sh` builda `app/` localmente e publica com o `wrangler`; ambos independem da `main`), e o merge/push da `main` só acontece no passo 6, **depois** do front. Alternativa (menos recomendada): pausar o Workers Builds no painel da Cloudflare durante o corte e fazer o merge antes.
 
 Premissa: ainda não há uso real, então `sorteios`, `reaberturas` e `pedidosExclusao` estão vazias e não há dados a converter.
 
 ## 0. Pré-condições (sem tocar na produção)
 
-1. Árvore limpa, no commit a publicar: `git status` e `git rev-parse --short HEAD`. Anote o commit **anterior** à migração (o alvo do rollback), por exemplo `git merge-base main HEAD` ou o último commit da `main` antes do merge.
+1. Árvore limpa, no commit a publicar: `git status` e `git rev-parse --short HEAD`. Anote o commit **anterior** à migração (o alvo do rollback): `git merge-base main HEAD` (a `main` ainda não tem a migração).
 2. **Construir as duas imagens Docker localmente.** Os Dockerfiles passaram a copiar `pacotes/instant-commands` e `pacotes/instant/commands.ts` e a instalar com `--filter instant-commands`, e isso **nunca foi verificado** (a máquina de desenvolvimento não tinha daemon do Docker):
    ```
    docker build -f worker/Dockerfile -t amigo-worker:corte .
@@ -22,6 +24,11 @@ Premissa: ainda não há uso real, então `sorteios`, `reaberturas` e `pedidosEx
    (cd app && bun run test && bun run check)
    (cd mcp && bun run test)
    ```
+4. **Runs abertos dos workflows antigos.** O worker novo não registra mais `sortear`, `apagar-conta` e `reabrir-grupo`. Confira, só leitura, se o `ow.db` do volume tem runs deles ainda não terminados (o volume `amigo-workflows` fica em `/var/lib/dokku/data/storage/amigo-workflows`, montado em `/data`):
+   ```
+   ssh vps-mercurio "sqlite3 -readonly /var/lib/dokku/data/storage/amigo-workflows/ow.db \"select workflow_name, status, count(*) from workflow_runs where workflow_name in ('sortear','apagar-conta','reabrir-grupo') and status not in ('completed','failed') group by 1,2;\""
+   ```
+   Sem linhas: nada a fazer. Com linhas: **podem ser ignoradas** (ficam órfãs no `ow.db`; o worker novo não as pega e seus pedidos já sumiram ou, se existirem, são tratados no passo 2). Anote o que apareceu. Se o `sqlite3` não existir na VPS, copie o arquivo para fora do volume e consulte a cópia.
 
 ## 1. Backup do Postgres
 
@@ -46,7 +53,9 @@ console.log(Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v.length]))
 
 Esperado: `{ sorteios: 0, reaberturas: 0, pedidosExclusao: 0 }`.
 
-**Se algum for maior que 0:** não siga. Liste os registros (troque `{}` por consulta que os mostre) e converta cada um **na mão** para o formato novo antes do push, ou espere o pedido terminar com o worker antigo e repita:
+**Se algum for maior que 0:** não siga para o push. O caminho **principal é apagar** os registros quando forem de teste (não reais): liste-os (troque `{}` por consulta que os mostre) e apague com `db.transact(db.tx.<entidade>[id].delete())`; o grupo continua íntegro. Só converta na mão se forem pedidos reais, ou espere o pedido terminar com o worker antigo e repita.
+
+Conversão (campos de status e datas):
 
 | Antigo | Novo |
 |---|---|
@@ -57,7 +66,7 @@ Esperado: `{ sorteios: 0, reaberturas: 0, pedidosExclusao: 0 }`.
 | `concluidoEm` | `finishedAt` |
 | (não existia) | `attempts` (use `0` ou `1`) |
 
-Para `failed`, `error` deve conter a mensagem que o usuário veria. Como o worker novo só trata `pending`/`running`, o mais simples para pedidos antigos sem utilidade é apagá-los (o grupo continua íntegro).
+A tabela **não é completa**. Antes de converter, confira os campos obrigatórios do schema novo em `pacotes/instant-commands/src/schema.ts` e os campos do próprio comando em `pacotes/instant/commands.ts`: `sorteios` exige também `rodada` e `chave` (`<grupoId>:<rodada>`, única), e cada comando tem os seus. Registro que falte um campo obrigatório quebra o worker novo ou a regra. Para `failed`, `error` deve conter a mensagem que o usuário veria. Como o worker novo só trata `pending`/`running`, pedidos antigos sem utilidade devem ser apagados, não convertidos.
 
 ## 3. Schema e regras
 
@@ -69,9 +78,11 @@ infra/instant/instant-push.sh teste
 infra/instant/instant-push.sh prod
 ```
 
+**Logo após o `instant-push.sh prod`, repita a consulta de contagem do passo 2.** Entre a primeira contagem e este push, o front antigo e as regras antigas continuam no ar, e alguém pode ter criado um pedido `pendente` com o worker parado: um sorteio assim mantém a `chave` e trava a rodada, e uma exclusão nunca seria pega (o reprocessamento diário só olha `failed`). Daqui em diante as regras novas rejeitam `pendente` (o vocabulário novo é `pending`), então esta segunda contagem fecha a janela. Se algo aparecer, aplique o mesmo passo do 2: **apague** (principal) ou converta, e só então siga para o deploy.
+
 Se o teste de permissões falhar, **não** rode o `prod`. O push remove os atributos antigos (`criadoEm`, `erro`, `concluidoEm`) ou os deixa órfãos; ambos servem, pois não há dados.
 
-## 4. Deploy
+## 4. Deploy (do `HEAD` da branch)
 
 ```
 infra/dokku/deploy.sh amigo-worker
@@ -79,23 +90,35 @@ infra/dokku/deploy.sh amigo-mcp
 infra/front.sh
 ```
 
-`deploy.sh` empurra o `HEAD` local para o Dokku; o deploy do worker o sobe de novo. O front também publica sozinho no push da `main` (Workers Builds); `infra/front.sh` é o caminho manual. Confirme que o worker subiu:
+`deploy.sh` empurra o `HEAD` local para o Dokku (não depende da `main`); `infra/front.sh` builda `app/` localmente e publica com o `wrangler`. O front novo só vai ao ar aqui, depois do schema e das regras.
 
-```
-ssh vps-mercurio 'dokku logs amigo-worker --num 100'
-```
+## 5. Worker no ar
 
-Procure o início do runner (`ic.*`) e a ausência de erros. Se ele ainda estiver parado (`ps:stop` do passo 2 mantido), `ssh vps-mercurio dokku ps:start amigo-worker`.
+1. Veja se o worker subiu e se não há erros:
+   ```
+   ssh vps-mercurio 'dokku logs amigo-worker --num 100'
+   ```
+   Procure o início do runner (`ic.*`).
+2. **Passo explícito:** o `ps:stop` do passo 2 pode manter o app parado mesmo depois do `deploy.sh` (não assuma que o deploy o ligou). Confira com `ssh vps-mercurio dokku ps:report amigo-worker` e, se `Running: false`, suba:
+   ```
+   ssh vps-mercurio dokku ps:start amigo-worker
+   ```
+3. Repita o `ps:report` até `Running: true`.
 
-## 5. Verificação ponta a ponta
+## 6. Verificação ponta a ponta
 
 Da raiz (o script limpa o que cria):
 
 ```
 bun scripts/e2e-producao.ts
+ssh vps-mercurio dokku ps:report amigo-worker
 ```
 
-Esperado: exit 0 (sorteio, reabertura e rodada 2 concluídos). Depois dê uma olhada manual no app: criar grupo, sortear, ver o par.
+Esperado: exit 0 (sorteio, reabertura e rodada 2 concluídos) e o worker `Running: true` depois do e2e. Depois dê uma olhada manual no app: criar grupo, sortear, ver o par.
+
+## 7. Merge na `main`
+
+Só agora, com o corte verificado: integre a branch na `main` e faça o push. O Workers Builds vai publicar `app/` da `main`, que é o mesmo front já no ar. Se algo falhou antes, **não** faça o merge.
 
 ## Rollback
 
@@ -109,4 +132,9 @@ infra/dokku/deploy.sh amigo-mcp
 infra/front.sh
 ```
 
-(`git switch --detach` só depois de salvar o trabalho local; volte à branch depois.) **Pedidos criados depois do corte se perdem**, porque o schema antigo não conhece o vocabulário novo; é aceitável enquanto não houver uso real. Se for preciso, restaure o backup do Postgres pelo runbook da VPS.
+(`git switch --detach` só depois de salvar o trabalho local; volte à branch depois.) Notas:
+
+- O worker só volta a rodar depois do `deploy.sh amigo-worker`. Se o rollback abortar no meio (por exemplo no `instant-push.sh`), o worker **continua parado**: refaça os passos ou suba com `ssh vps-mercurio dokku ps:start amigo-worker` conforme o que já estiver revertido.
+- O próximo push na `main` republica o que estiver na `main` (Workers Builds). Se a migração já tiver sido integrada, o front novo volta a ser publicado por cima do rollback: reverta a `main` (ou pause o Workers Builds) antes de qualquer push nela.
+
+**Pedidos criados depois do corte se perdem**, porque o schema antigo não conhece o vocabulário novo; é aceitável enquanto não houver uso real. Se for preciso, restaure o backup do Postgres pelo runbook da VPS.
